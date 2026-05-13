@@ -39,6 +39,7 @@ pub const BLOCK_HTML_TAGS: &[&str] = &[
     "hr",
     "html",
     "iframe",
+    "label",
     "legend",
     "li",
     "link",
@@ -60,6 +61,7 @@ pub const BLOCK_HTML_TAGS: &[&str] = &[
     "section",
     "select",
     "source",
+    "span",
     "style",
     "summary",
     "table",
@@ -112,6 +114,10 @@ fn template_break_keywords(opts: &FormatOptions) -> Vec<String> {
             kws.push(b.clone());
         }
     }
+    // "when" is a hardcoded branch keyword for {% match %}/{% when %} patterns
+    if !kws.contains(&"when".to_string()) {
+        kws.push("when".into());
+    }
     // ignore_blocks: only add endXXX (they still need a line), but NOT the
     // opening keyword itself — that stays inline.
     for b in &opts.ignore_blocks {
@@ -125,59 +131,46 @@ fn template_break_keywords(opts: &FormatOptions) -> Vec<String> {
     kws
 }
 
-/// Returns true if `pos` falls inside a raw/ignored span in `html`.
-/// Ignored spans: `{# ... #}`, `<!-- ... -->`, `{% raw %}...{% endraw %}`,
+// ── Raw-span pre-computation ─────────────────────────────────────────────────
+
+/// Scan `html` once and return all raw/verbatim byte ranges as sorted
+/// `(start, end)` pairs (exclusive: a position `p` is inside span `(s, e)`
+/// iff `s < p && p < e`, matching the original `inside_raw_span` semantics).
+///
+/// Raw spans: `{# ... #}`, `<!-- ... -->`, `{% raw %}...{% endraw %}`,
 /// `<pre>...</pre>`, `<script>...</script>`, `<style>...</style>`.
-fn inside_raw_span(html: &str, pos: usize) -> bool {
-    // Quick scan: find all raw regions and check containment.
-    // We do this lazily with a simple state machine over bytes.
+fn compute_raw_spans(html: &str) -> Vec<(usize, usize)> {
     let bytes = html.as_bytes();
     let len = bytes.len();
     let mut i = 0usize;
-
-    macro_rules! starts_with_at {
-        ($needle:expr, $at:expr) => {
-            bytes[$at..].starts_with($needle.as_bytes())
-        };
-    }
+    let mut spans: Vec<(usize, usize)> = Vec::new();
 
     while i < len {
-        if i > pos {
-            break;
-        }
         // {# comment #}
-        if starts_with_at!("{#", i) {
-            let end = find_close(html, i + 2, "#}");
-            let end = end.unwrap_or(len);
-            if pos > i && pos < end + 2 {
-                return true;
-            }
+        if bytes[i..].starts_with(b"{#") {
+            let end = find_close(html, i + 2, "#}").unwrap_or(len);
+            spans.push((i, end + 2));
             i = end + 2;
             continue;
         }
         // <!-- HTML comment -->
-        if starts_with_at!("<!--", i) {
-            let end = find_close(html, i + 4, "-->");
-            let end = end.unwrap_or(len);
-            if pos > i && pos < end + 3 {
-                return true;
-            }
+        if bytes[i..].starts_with(b"<!--") {
+            let end = find_close(html, i + 4, "-->").unwrap_or(len);
+            spans.push((i, end + 3));
             i = end + 3;
             continue;
         }
         // {% raw %} ... {% endraw %}
-        if starts_with_at!("{%", i) {
+        if bytes[i..].starts_with(b"{%") {
             if let Some(tag_end) = find_close(html, i + 2, "%}") {
                 let inner = html[i + 2..tag_end].trim();
                 if inner == "raw" || inner.starts_with("raw ") || inner.starts_with("raw\t") {
                     let raw_end = html[tag_end + 2..]
                         .find("{% endraw %}")
                         .or_else(|| html[tag_end + 2..].find("{%endraw%}"))
-                        .map(|o| tag_end + 2 + o);
-                    let raw_end = raw_end.unwrap_or(len);
-                    if pos > i && pos < raw_end {
-                        return true;
-                    }
+                        .map(|o| tag_end + 2 + o)
+                        .unwrap_or(len);
+                    spans.push((i, raw_end));
                     i = raw_end;
                     continue;
                 }
@@ -186,23 +179,33 @@ fn inside_raw_span(html: &str, pos: usize) -> bool {
             }
         }
         // <pre>, <script>, <style>
-        for tag in &["pre", "script", "style"] {
-            let open = format!("<{}", tag);
-            if starts_with_at!(open.as_str(), i) {
-                let close_tag = format!("</{}>", tag);
-                let block_end = html[i..].find(close_tag.as_str()).map(|o| i + o);
-                let block_end = block_end.unwrap_or(len);
-                if pos > i && pos < block_end + close_tag.len() {
-                    return true;
+        if bytes[i] == b'<' {
+            let mut advanced = false;
+            for tag in &["pre", "script", "style"] {
+                let open = format!("<{}", tag);
+                if html[i..].starts_with(&open) {
+                    let close_tag = format!("</{}>", tag);
+                    let block_end = html[i..].find(close_tag.as_str()).map(|o| i + o).unwrap_or(len);
+                    spans.push((i, (block_end + close_tag.len()).min(len)));
+                    i = (block_end + close_tag.len()).min(len);
+                    advanced = true;
+                    break;
                 }
-                i = block_end + close_tag.len();
-                // restart outer loop
-                break;
+            }
+            if advanced {
+                continue;
             }
         }
         i += 1;
     }
-    false
+    spans
+}
+
+/// O(log n) check: is `pos` inside any pre-computed raw span?
+fn is_in_raw_span(spans: &[(usize, usize)], pos: usize) -> bool {
+    // spans are sorted by start; find the last one with start < pos
+    let idx = spans.partition_point(|&(start, _)| start < pos);
+    idx > 0 && spans[idx - 1].1 > pos
 }
 
 fn find_close(s: &str, from: usize, needle: &str) -> Option<usize> {
@@ -213,73 +216,75 @@ pub fn expand(html: &str, opts: &FormatOptions) -> String {
     let html_tags: Vec<String> = BLOCK_HTML_TAGS.iter().map(|s| s.to_string()).collect();
     let tmpl_kws = template_break_keywords(opts);
 
-    let mut out = html.to_string();
+    // Pre-compute raw spans once per pass so neither break function needs to
+    // re-scan from byte 0 on every tag match.
+    let raw1 = compute_raw_spans(html);
+    let out = break_html_tags(html, &html_tags, &raw1);
 
-    // Pass 1: HTML block tags — break before and after
-    out = break_html_tags(&out, &html_tags);
-
-    // Pass 2: Template tags — break before and after
-    out = break_template_tags(&out, &tmpl_kws);
+    let raw2 = compute_raw_spans(&out);
+    let out = break_template_tags(&out, &tmpl_kws, &raw2);
 
     // Collapse runs of blank lines to at most one blank line
     collapse_blank_lines(&out)
 }
 
 /// Insert `\n` before and after HTML block tags when not already on own line.
-fn break_html_tags(html: &str, tags: &[String]) -> String {
+fn break_html_tags(html: &str, tags: &[String], spans: &[(usize, usize)]) -> String {
     let mut out = String::with_capacity(html.len() + 256);
-    let chars: Vec<char> = html.chars().collect();
-    let len = chars.len();
-    let mut i = 0usize;
+    let bytes = html.as_bytes();
+    let len = bytes.len();
+    let mut i = 0usize; // byte offset
 
     while i < len {
         // Check for `<` that starts an HTML block tag (open or close)
-        if chars[i] == '<' {
-            let rest: String = chars[i..].iter().collect();
+        if bytes[i] == b'<' {
+            let rest = &html[i..]; // free slice — no allocation
 
             // Try to match a block HTML tag at this position
-            if let Some((matched, tag_len)) = match_html_block_tag(&rest, tags) {
-                let byte_pos: usize = chars[..i].iter().collect::<String>().len();
-                let in_raw = inside_raw_span(html, byte_pos);
-
-                if in_raw {
-                    // Just emit the character as-is
-                    out.push(chars[i]);
+            if let Some((matched, byte_len)) = match_html_block_tag(rest, tags) {
+                if is_in_raw_span(spans, i) {
+                    // Inside a raw span — emit one char as-is
+                    out.push(b'<' as char);
                     i += 1;
                     continue;
                 }
 
                 // Break before unless already at the start of a (possibly indented) line.
-                // "Already on its own line" means every char since the last \n is whitespace.
                 let already_own_line = out
                     .rfind('\n')
                     .map(|nl| out[nl + 1..].chars().all(char::is_whitespace))
                     .unwrap_or(out.is_empty());
                 if !already_own_line {
-                    // Remove trailing whitespace on the current line, then add newline
                     while out.ends_with([' ', '\t']) {
                         out.pop();
                     }
                     out.push('\n');
                 }
                 out.push_str(&matched);
-                i += tag_len;
+                i += byte_len;
 
                 // Break after (unless immediately followed by newline)
-                if i < len && chars[i] != '\n' {
+                if i < len && bytes[i] != b'\n' {
                     out.push('\n');
                 }
                 continue;
             }
         }
-        out.push(chars[i]);
-        i += 1;
+        // Emit the next character — ASCII fast path avoids chars().next() overhead
+        if bytes[i].is_ascii() {
+            out.push(bytes[i] as char);
+            i += 1;
+        } else {
+            let ch = html[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
     }
     out
 }
 
 /// Match an HTML block opening/closing tag at the start of `s`.
-/// Returns (full match string, char length of match) or None.
+/// Returns `(full match string, byte length of match)` or `None`.
 fn match_html_block_tag(s: &str, tags: &[String]) -> Option<(String, usize)> {
     if !s.starts_with('<') {
         return None;
@@ -305,12 +310,11 @@ fn match_html_block_tag(s: &str, tags: &[String]) -> Option<(String, usize)> {
     // Use the shared scanner that correctly skips {%...%} containing `>`.
     let close_byte = super::find_html_tag_close(s)?;
     let matched = &s[..close_byte + 1];
-    let char_len = matched.chars().count();
-    Some((matched.to_string(), char_len))
+    Some((matched.to_string(), close_byte + 1))
 }
 
 /// Insert `\n` before and after Askama template tags.
-fn break_template_tags(html: &str, kws: &[String]) -> String {
+fn break_template_tags(html: &str, kws: &[String], spans: &[(usize, usize)]) -> String {
     let mut out = String::with_capacity(html.len() + 256);
     let bytes = html.as_bytes();
     let len = bytes.len();
@@ -375,7 +379,7 @@ fn break_template_tags(html: &str, kws: &[String]) -> String {
         if bytes[i] == b'<'
             && i + 1 < len
             && bytes[i + 1].is_ascii_alphabetic()
-            && !inside_raw_span(html, i)
+            && !is_in_raw_span(spans, i)
         {
             in_html_open_tag = true;
             html_attr_quote = None;
@@ -384,7 +388,7 @@ fn break_template_tags(html: &str, kws: &[String]) -> String {
 
         // Look for `{%` (both are ASCII, safe to check by byte)
         if i + 1 < len && bytes[i] == b'{' && bytes[i + 1] == b'%' {
-            if inside_raw_span(html, i) {
+            if is_in_raw_span(spans, i) {
                 // Emit the `{` character via its proper UTF-8 slice, advance by one char
                 let ch = html[i..].chars().next().unwrap();
                 out.push(ch);

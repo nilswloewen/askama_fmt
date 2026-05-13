@@ -58,7 +58,7 @@ pub struct FormatOptions {
     pub max_attribute_length: usize,
     /// Tags that open an indented block, e.g. `["match"]`
     pub custom_blocks: Vec<String>,
-    /// Tags rendered at indent-1 without changing level, e.g. `["when"]`
+    /// Tags rendered at indent-1 without changing level, e.g. `["else"]`
     pub custom_blocks_unindent_line: Vec<String>,
     /// Tags kept single-line (not expanded), e.g. `["call"]`
     pub ignore_blocks: Vec<String>,

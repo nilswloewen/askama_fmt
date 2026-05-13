@@ -30,6 +30,8 @@ cargo msrv find
 
 The crate is both a library (`src/lib.rs` → `format()` + `FormatOptions`) and a CLI binary (`src/main.rs`). The binary handles file collection (glob/directory walking via `ignore`), parallel processing via Rayon, and `--check`/`--diff` modes.
 
+File extension filtering only applies to **directory** walking — only `*.askama.html` files are discovered. When given a direct **file path or glob**, any extension is accepted and formatted.
+
 ### Formatting pipeline
 
 `formatter/mod.rs::format()` runs five sequential passes on the template string:

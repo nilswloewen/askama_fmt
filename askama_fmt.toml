@@ -16,8 +16,9 @@ custom_blocks = ["match"]
 
 # Template tags rendered at one indent level above their content,
 # matching the behaviour of {% else %} and {% elif %}.
-# Use for {% when %} arms inside a {% match %} block.
-custom_blocks_unindent_line = ["when"]
+# Note: {% when %} is handled automatically as a branch separator inside
+# {% match %} blocks — no configuration needed.
+custom_blocks_unindent_line = []
 
 # Template tags kept on the same line as surrounding content.
 # Use for {% call macro() %} — Askama macro invocations are single-line

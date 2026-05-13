@@ -42,6 +42,10 @@ struct IndentState<'a> {
     /// Tuple: (tag_name, is_block_level).  Block-level tags increment `level`
     /// when the closing `>` is found; inline/void tags do not.
     multi_line_tag: Option<(String, bool)>,
+    /// Stack of base indent levels for open `custom_blocks` tags.
+    /// Used by `custom_blocks_branch` keywords to reset each branch to the
+    /// same indentation level inside the enclosing block.
+    block_base_levels: Vec<usize>,
 }
 
 impl<'a> IndentState<'a> {
@@ -52,6 +56,7 @@ impl<'a> IndentState<'a> {
             in_raw: false,
             raw_depth: 0,
             multi_line_tag: None,
+            block_base_levels: Vec::new(),
         }
     }
 
@@ -79,6 +84,8 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
     let unindent_kws = unindent_keywords(opts);
     let unindent_line_kws = unindent_line_keywords(opts);
     let no_change_kws = no_change_keywords(opts);
+    let branch_kws = branch_keywords(opts);
+    let branch_end_kws = branch_end_keywords(opts);
 
     for line in html.lines() {
         let trimmed = line.trim();
@@ -168,8 +175,39 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             }
         }
 
-        // 2. Template closing tag (`{% end* %}`) → unindent before printing
+        // 2. Template tag classification
         if let Some(kw) = parse_template_keyword(trimmed) {
+            // 2a. Branch keyword (e.g. "when" with custom_blocks_branch = ["when"]):
+            // resets to the enclosing block's base level + 1, then pushes for content.
+            if branch_kws.contains(&kw.as_str().to_string()) {
+                if let Some(&base) = state.block_base_levels.last() {
+                    state.level = base + 1;
+                    out.push_str(&state.indent());
+                    out.push_str(trimmed);
+                    out.push('\n');
+                    state.level = base + 2;
+                } else {
+                    // No enclosing custom block — no-change fallback
+                    out.push_str(&state.indent());
+                    out.push_str(trimmed);
+                    out.push('\n');
+                }
+                continue;
+            }
+
+            // 2b. Branch-aware end keyword (end forms of custom_blocks):
+            // pops back to the base level recorded when the block was opened.
+            if branch_end_kws.contains(&kw.as_str().to_string()) {
+                let base = state.block_base_levels.pop()
+                    .unwrap_or_else(|| state.level.saturating_sub(1));
+                state.level = base;
+                out.push_str(&state.indent());
+                out.push_str(trimmed);
+                out.push('\n');
+                continue;
+            }
+
+            // 2c. Built-in closing tag (`{% endif %}`, `{% endfor %}`, …)
             if unindent_kws.contains(&kw.as_str().to_string()) {
                 state.level = state.level.saturating_sub(1);
                 out.push_str(&state.indent());
@@ -178,7 +216,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
                 continue;
             }
 
-            // 3. Unindent-line tags (else, else if, when) → print at level-1
+            // 3. Unindent-line tags (else, else if) → print at level-1
             if unindent_line_kws.contains(&kw.as_str().to_string()) {
                 let effective = state.level.saturating_sub(1);
                 out.push_str(&state.indent_at(effective));
@@ -197,6 +235,10 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
             // 5. Indent-opening template tag
             if indent_kws.contains(&kw.as_str().to_string()) {
+                // Track base level for custom_blocks so branch keywords can reset correctly
+                if opts.custom_blocks.contains(&kw.as_str().to_string()) {
+                    state.block_base_levels.push(state.level);
+                }
                 out.push_str(&state.indent());
                 out.push_str(trimmed);
                 out.push('\n');
@@ -293,6 +335,14 @@ fn unindent_line_keywords(opts: &FormatOptions) -> Vec<String> {
         kws.push(b.clone());
     }
     kws
+}
+
+fn branch_keywords(_opts: &FormatOptions) -> Vec<String> {
+    vec!["when".into()]
+}
+
+fn branch_end_keywords(opts: &FormatOptions) -> Vec<String> {
+    opts.custom_blocks.iter().map(|b| format!("end{}", b)).collect()
 }
 
 fn no_change_keywords(opts: &FormatOptions) -> Vec<String> {
