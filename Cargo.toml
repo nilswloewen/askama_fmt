@@ -1,0 +1,36 @@
+[package]
+name = "askama_fmt"
+version = "0.1.0"
+edition = "2021"
+description = "Formatter for Askama HTML templates"
+license = "MIT"
+authors = ["Nils Loewen <nils@nilsloewen.com>"]
+keywords = ["askama", "formatter", "html", "template"]
+categories = ["command-line-utilities", "development-tools"]
+repository = "https://github.com/nilswloewen/askama_fmt"
+documentation = "https://docs.rs/askama_fmt"
+readme = "README.md"
+exclude = ["justfile", "CLAUDE.md"]
+rust-version = "1.85.1"
+
+[[bin]]
+name = "askama_fmt"
+path = "src/main.rs"
+
+[lib]
+name = "askama_fmt"
+path = "src/lib.rs"
+
+[dependencies]
+clap        = { version = "4.6.1", features = ["derive"] }
+serde       = { version = "1.0.228", features = ["derive"] }
+fancy-regex = "0.18.0"
+regex       = "1.12.3"
+glob        = "0.3.3"
+ignore      = "0.4.25"
+toml        = "1.1.2"
+rayon       = "1.12.0"
+similar     = "3.1.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
