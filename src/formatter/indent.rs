@@ -256,8 +256,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
                     continue;
                 }
 
-                // Format attributes if needed
-                let formatted = format_attributes(trimmed, state.level, opts);
+                let formatted = maybe_format_attributes(trimmed, state.level, opts);
                 out.push_str(&state.indent());
                 out.push_str(&formatted);
                 out.push('\n');
@@ -441,71 +440,82 @@ fn is_raw_block_close(line: &str) -> bool {
 
 // ── Attribute formatting ─────────────────────────────────────────────────────
 
-/// If the line is an HTML open tag whose attributes are long, break them.
-fn format_attributes(line: &str, level: usize, opts: &FormatOptions) -> String {
-    maybe_format_attributes(line, level, opts)
-}
-
 pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -> String {
     let s = line.trim();
-    // Only attempt attribute formatting on HTML open tags
     if !s.starts_with('<') || s.starts_with("</") || s.starts_with("<!") {
         return s.to_string();
     }
 
-    // Find tag name
     let rest = &s[1..];
     let name_end = rest
         .find(|c: char| !c.is_alphanumeric() && c != '-')
         .unwrap_or(rest.len());
     let tag_name = &rest[..name_end];
 
-    // Find where attributes start (after tag name + whitespace)
-    let after_name = &s[1 + name_end..];
-    if !after_name.starts_with(|c: char| c.is_whitespace()) {
+    if !s[1 + name_end..].starts_with(|c: char| c.is_whitespace()) {
         return s.to_string();
     }
 
-    // Find where the open tag ends (the `>` or `/>`) and what follows (content).
     let (tag_only, after_close) = split_tag_from_content(s);
-
-    // Break attributes only if the full indented tag would exceed max_line_length.
-    let indent_len = opts.indent * level;
-    if indent_len + tag_only.len() <= opts.max_line_length {
-        return s.to_string();
-    }
-
-    // Parse attributes from just the tag
     let attrs = parse_attributes(tag_only);
     if attrs.len() < 2 {
         return s.to_string();
     }
 
-    // Spacing: align subsequent attributes under the first attribute column.
-    // Column = indent * level + `<tagname ` width
-    let align_spaces = " ".repeat(opts.indent * level + 1 + tag_name.len() + 1);
+    // Sort attributes alphabetically. Skip if template syntax is present —
+    // reordering {% if %}...{% endif %} conditional attributes would break semantics.
+    let attrs = sort_attributes(attrs);
 
     let is_self_closing = tag_only.trim_end().ends_with("/>");
     let close = if is_self_closing { " />" } else { ">" };
 
-    let mut out_lines = Vec::new();
-    for (i, attr) in attrs.iter().enumerate() {
-        if i == 0 {
-            out_lines.push(format!("<{} {}", tag_name, attr));
+    // Reconstruct the tag with sorted attributes and check line length.
+    let tag_sorted = format!("<{} {}{}", tag_name, attrs.join(" "), close);
+    let indent_len = opts.indent * level;
+    if indent_len + tag_sorted.len() <= opts.max_line_length {
+        return if after_close.is_empty() {
+            tag_sorted
         } else {
-            out_lines.push(format!("{}{}", align_spaces, attr));
-        }
+            format!("{}{}", tag_sorted, after_close)
+        };
     }
 
-    // Last attribute line gets the close bracket + any inline content
+    // Break: align subsequent attributes under the first attribute column.
+    let align = " ".repeat(indent_len + 1 + tag_name.len() + 1);
+    let mut out_lines: Vec<String> = attrs
+        .iter()
+        .enumerate()
+        .map(|(i, attr)| {
+            if i == 0 {
+                format!("<{} {}", tag_name, attr)
+            } else {
+                format!("{}{}", align, attr)
+            }
+        })
+        .collect();
+
     if let Some(last) = out_lines.last_mut() {
         last.push_str(close);
         if !after_close.is_empty() {
             last.push_str(after_close);
         }
     }
-
     out_lines.join("\n")
+}
+
+/// Sort attributes alphabetically by name. Skips reordering if any attribute
+/// contains template syntax (`{%` or `{{`) — those are conditional attribute
+/// injections whose relative order is load-bearing.
+fn sort_attributes(mut attrs: Vec<String>) -> Vec<String> {
+    if attrs.iter().any(|a| a.contains("{%") || a.contains("{{")) {
+        return attrs;
+    }
+    attrs.sort_by(|a, b| {
+        let ka = a.split('=').next().unwrap_or(a).trim();
+        let kb = b.split('=').next().unwrap_or(b).trim();
+        ka.to_lowercase().cmp(&kb.to_lowercase())
+    });
+    attrs
 }
 
 /// Split an HTML tag string into the `<tag attrs>` portion and anything after `>`.
