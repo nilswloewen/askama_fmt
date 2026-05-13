@@ -4,9 +4,6 @@
 # Spaces per indentation level.
 indent = 4
 
-# Lines longer than this are a candidate for collapsing short tag pairs.
+# Lines longer than this are candidates for collapsing short tag pairs
+# and for breaking long HTML attribute lists onto separate lines.
 max_line_length = 120
-
-# HTML attributes whose combined length exceeds this are broken one-per-line.
-max_attribute_length = 70
-

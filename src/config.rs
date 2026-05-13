@@ -46,7 +46,6 @@ impl From<toml::de::Error> for ConfigError {
 pub struct FormatOptions {
     pub indent: usize,
     pub max_line_length: usize,
-    pub max_attribute_length: usize,
 }
 
 impl Default for FormatOptions {
@@ -54,7 +53,6 @@ impl Default for FormatOptions {
         Self {
             indent: 4,
             max_line_length: 120,
-            max_attribute_length: 70,
         }
     }
 }
@@ -90,9 +88,6 @@ impl FormatOptions {
         if let Some(v) = ov.max_line_length {
             self.max_line_length = v;
         }
-        if let Some(v) = ov.max_attribute_length {
-            self.max_attribute_length = v;
-        }
         self
     }
 }
@@ -102,6 +97,5 @@ impl FormatOptions {
 pub struct CliOverrides {
     pub indent: Option<usize>,
     pub max_line_length: Option<usize>,
-    pub max_attribute_length: Option<usize>,
     pub config: Option<PathBuf>,
 }

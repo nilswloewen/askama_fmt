@@ -60,7 +60,7 @@ File extension filtering only applies to **directory** walking — only `*.askam
 
 `config.rs::FormatOptions` deserializes from `askama_fmt.toml`. Config is discovered by walking up from the target file's directory until hitting `.git` or the filesystem root. CLI flags are applied on top as overrides via `apply_overrides`.
 
-`FormatOptions` has three plain fields: `indent`, `max_line_length`, `max_attribute_length`. Blank lines are always collapsed to at most one (rustfmt-style, hardcoded). All Askama template syntax is hardcoded — zero syntax configuration required.
+`FormatOptions` has two plain fields: `indent` and `max_line_length`. Both attribute breaking and tag-pair collapsing use `max_line_length` as the single ruler. Blank lines are always collapsed to at most one. All Askama template syntax is hardcoded — zero syntax configuration required.
 
 ### Regex strategy
 

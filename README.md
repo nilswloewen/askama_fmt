@@ -80,8 +80,7 @@ See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all op
 | Option                | Type    | Default | Description                                                                       |
 |-----------------------|---------|---------|-----------------------------------------------------------------------------------|
 | `indent`              | integer | `4`     | Spaces per indentation level                                                      |
-| `max_line_length`     | integer | `120`   | Lines longer than this are a candidate for collapsing/expanding                   |
-| `max_attribute_length`| integer | `70`    | HTML attributes longer than this are broken one-per-line                          |
+| `max_line_length`     | integer | `120`   | Lines longer than this trigger attribute breaking and tag-pair collapsing         |
 
 ## CLI reference
 
@@ -97,7 +96,6 @@ Options:
       --diff                           Print a unified diff for each file that would change, exit 1 if any
       --indent <N>                     Spaces per indentation level
       --max-line-length <N>            Maximum line length
-      --max-attribute-length <N>       Maximum attribute length before breaking
       --config <PATH>                  Explicit path to askama_fmt.toml
   -h, --help
   -V, --version

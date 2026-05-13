@@ -467,20 +467,11 @@ pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -
     }
 
     // Find where the open tag ends (the `>` or `/>`) and what follows (content).
-    // Do this BEFORE the length check so we measure only the tag's attributes,
-    // not any inline content that comes after `>` (e.g. `<a href="x">text</a>`).
     let (tag_only, after_close) = split_tag_from_content(s);
 
-    // Check if the attributes-only portion exceeds max_attribute_length.
-    // Mirrors djLint: `if len(attributes) < config.max_attribute_length: return`.
-    let attrs_start = 1 + name_end; // after `<tagname`
-    let attrs_str = if attrs_start < tag_only.len() {
-        &tag_only[attrs_start..]
-    } else {
-        ""
-    };
-    let attrs_only_len = attrs_str.trim_end_matches(['>', '/']).len();
-    if attrs_only_len < opts.max_attribute_length {
+    // Break attributes only if the full indented tag would exceed max_line_length.
+    let indent_len = opts.indent * level;
+    if indent_len + tag_only.len() <= opts.max_line_length {
         return s.to_string();
     }
 

@@ -269,11 +269,7 @@ fn else_if_chain() {
 fn template_condition_with_gt_in_attribute() {
     let src = r#"<form action="/submit" method="POST" {% if count > 0 %} has-items {% endif %}><p>content</p></form>"#;
     let expected = "\
-<form action=\"/submit\"
-      method=\"POST\"
-      {% if count > 0 %}
-      has-items
-      {% endif %}>
+<form action=\"/submit\" method=\"POST\" {% if count > 0 %} has-items {% endif %}>
     <p>content</p>
 </form>
 ";
@@ -336,11 +332,7 @@ fn template_expression_with_gt_in_attribute() {
 fn form_conditional_attr_stays_inline() {
     let src = r#"<form action="/submit" method="POST" {% if extra %} data-extra="true" {% endif %}><input type="text" name="q"></form>"#;
     let expected = "\
-<form action=\"/submit\"
-      method=\"POST\"
-      {% if extra %}
-      data-extra=\"true\"
-      {% endif %}>
+<form action=\"/submit\" method=\"POST\" {% if extra %} data-extra=\"true\" {% endif %}>
     <input type=\"text\" name=\"q\">
 </form>
 ";
@@ -365,14 +357,9 @@ fn form_conditional_attr_idempotent() {
 
 #[test]
 fn self_closing_attrs_no_slash_token() {
+    // 98 chars — fits within max_line_length=120, so stays on one line
     let src = r#"<input type="text" name="username" placeholder="Enter username" autocomplete="username" required />"#;
-    let expected = "\
-<input type=\"text\"
-       name=\"username\"
-       placeholder=\"Enter username\"
-       autocomplete=\"username\"
-       required />
-";
+    let expected = "<input type=\"text\" name=\"username\" placeholder=\"Enter username\" autocomplete=\"username\" required />\n";
     assert_eq!(format(src, &opts()), expected);
 }
 

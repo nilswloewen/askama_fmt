@@ -42,10 +42,6 @@ struct Cli {
     #[arg(long, value_name = "N")]
     max_line_length: Option<usize>,
 
-    /// Maximum attribute length before breaking [default: 70]
-    #[arg(long, value_name = "N")]
-    max_attribute_length: Option<usize>,
-
     /// Explicit path to askama_fmt.toml config file
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
@@ -57,7 +53,6 @@ fn main() {
     let overrides = CliOverrides {
         indent: cli.indent,
         max_line_length: cli.max_line_length,
-        max_attribute_length: cli.max_attribute_length,
         config: cli.config.clone(),
     };
 
