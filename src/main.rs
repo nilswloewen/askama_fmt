@@ -108,10 +108,14 @@ fn main() {
 
     let no_write = cli.check || cli.diff;
     let mut any_changed = false;
+    let mut any_error = false;
 
     for (file, result) in results {
         match result {
-            Err(msg) => eprintln!("{}", msg),
+            Err(msg) => {
+                eprintln!("{}", msg);
+                any_error = true;
+            }
             Ok(None) => {}
             Ok(Some((original, formatted))) => {
                 any_changed = true;
@@ -122,13 +126,19 @@ fn main() {
                 } else {
                     match std::fs::write(&file, &formatted) {
                         Ok(()) => println!("Reformatted: {}", file.display()),
-                        Err(e) => eprintln!("Error writing {}: {}", file.display(), e),
+                        Err(e) => {
+                            eprintln!("Error writing {}: {}", file.display(), e);
+                            any_error = true;
+                        }
                     }
                 }
             }
         }
     }
 
+    if any_error {
+        process::exit(2);
+    }
     if any_changed && no_write {
         process::exit(1);
     }

@@ -437,3 +437,88 @@ color: blue;
 ";
     assert_eq!(format(src, &opts()), src);
 }
+
+// ── {# comment #} indentation ────────────────────────────────────────────────
+
+#[test]
+fn comment_indented_inside_if() {
+    let src = "{% if show %}{# heading #}<h1>Hi</h1>{% endif %}";
+    let expected = "\
+{% if show %}
+    {# heading #}
+    <h1>Hi</h1>
+{% endif %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn comment_indented_inside_for() {
+    let src = "{% for item in items %}{# render item #}<li>{{ item }}</li>{% endfor %}";
+    let expected = "\
+{% for item in items %}
+    {# render item #}
+    <li>{{ item }}</li>
+{% endfor %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn comment_idempotent() {
+    let src = "\
+{% if show %}
+    {# heading #}
+    <h1>Hi</h1>
+{% endif %}
+";
+    assert_eq!(format(src, &opts()), src);
+}
+
+// ── {% raw %} pass-through ────────────────────────────────────────────────────
+
+#[test]
+fn raw_block_passthrough() {
+    let src = "{% raw %}{{ not_a_variable }}{% endraw %}";
+    let expected = "\
+{% raw %}
+{{ not_a_variable }}
+{% endraw %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn raw_block_multiline_passthrough() {
+    let src = "\
+{% raw %}
+{{ not_a_variable }}
+{# not_a_comment #}
+{% endraw %}
+";
+    assert_eq!(format(src, &opts()), src);
+}
+
+#[test]
+fn raw_block_inside_if() {
+    let src = "{% if show %}{% raw %}{{ x }}{% endraw %}{% endif %}";
+    let expected = "\
+{% if show %}
+    {% raw %}
+{{ x }}
+    {% endraw %}
+{% endif %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn raw_block_not_broken_by_expand() {
+    let src = "{% raw %}<div><p>{{ x }}</p></div>{% endraw %}";
+    let out = format(src, &opts());
+    assert!(
+        out.contains("<div><p>{{ x }}</p></div>"),
+        "raw block contents were modified:\n{}",
+        out
+    );
+}
