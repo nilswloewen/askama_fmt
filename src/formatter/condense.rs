@@ -99,7 +99,7 @@ pub fn condense(html: &str, opts: &FormatOptions) -> String {
 }
 
 /// Strip trailing whitespace from each line, collapsing runs to at most one blank line.
-pub fn clean_whitespace(html: &str, _opts: &FormatOptions) -> String {
+pub fn clean_whitespace(html: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut consecutive_blanks = 0u32;
 

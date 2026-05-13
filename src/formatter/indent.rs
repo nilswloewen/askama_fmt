@@ -2,34 +2,23 @@
 use crate::config::FormatOptions;
 use crate::formatter::expand::BLOCK_HTML_TAGS;
 
-/// HTML tags whose opening tag increases indent.
-fn is_indent_html_tag(name: &str) -> bool {
-    BLOCK_HTML_TAGS.contains(&name)
-        && !is_void_html_tag(name)
-        && name != "hr"
-        && name != "br"
-        && name != "link"
-        && name != "meta"
-}
+const VOID_HTML_TAGS: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+];
 
 fn is_void_html_tag(name: &str) -> bool {
-    matches!(
-        name,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-    )
+    VOID_HTML_TAGS.iter().any(|&t| t.eq_ignore_ascii_case(name))
+}
+
+/// HTML tags whose opening tag increases indent.
+fn is_indent_html_tag(name: &str) -> bool {
+    BLOCK_HTML_TAGS.iter().any(|&t| t.eq_ignore_ascii_case(name))
+        && !is_void_html_tag(name)
+        && !"hr".eq_ignore_ascii_case(name)
+        && !"br".eq_ignore_ascii_case(name)
+        && !"link".eq_ignore_ascii_case(name)
+        && !"meta".eq_ignore_ascii_case(name)
 }
 
 struct IndentState<'a> {
@@ -60,18 +49,19 @@ impl<'a> IndentState<'a> {
         }
     }
 
-    fn indent(&self) -> String {
-        " ".repeat(self.opts.indent * self.level)
+    fn write_indent(&self, out: &mut String) {
+        out.extend(std::iter::repeat_n(' ', self.opts.indent * self.level));
     }
 
-    fn indent_at(&self, level: usize) -> String {
-        " ".repeat(self.opts.indent * level)
+    fn write_indent_at(&self, out: &mut String, level: usize) {
+        out.extend(std::iter::repeat_n(' ', self.opts.indent * level));
     }
 
     /// Indentation for continuation attribute lines inside a multi-line tag.
     /// Aligns to the column after `<tagname `.
-    fn continuation_indent(&self, tag_name: &str) -> String {
-        " ".repeat(self.opts.indent * self.level + 1 + tag_name.len() + 1)
+    fn write_continuation_indent(&self, out: &mut String, tag_name: &str) {
+        let n = self.opts.indent * self.level + 1 + tag_name.len() + 1;
+        out.extend(std::iter::repeat_n(' ', n));
     }
 }
 
@@ -92,11 +82,10 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
         // Covers both block-level tags (<form>, <div>, …) and inline/void
         // tags (<input>, <a>, …) that have their `>` on a later line.
         if let Some((ref tag_name, is_block)) = state.multi_line_tag.clone() {
-            let cont_indent = state.continuation_indent(tag_name);
             if html_open_tag_closes_here(trimmed) {
                 // This line has the closing `>` — tag is fully open.
                 state.multi_line_tag = None;
-                out.push_str(&cont_indent);
+                state.write_continuation_indent(&mut out, tag_name);
                 out.push_str(trimmed);
                 out.push('\n');
                 // Block-level tags open an indent level; inline/void do not.
@@ -106,7 +95,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
                 }
             } else {
                 // Continuation attribute line (no `>` yet).
-                out.push_str(&cont_indent);
+                state.write_continuation_indent(&mut out, tag_name);
                 out.push_str(trimmed);
                 out.push('\n');
             }
@@ -129,7 +118,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
                         || trimmed.starts_with("</pre>")
                         || trimmed.starts_with("{%");
                     if starts_with_close {
-                        out.push_str(&state.indent());
+                        state.write_indent(&mut out);
                     }
                     out.push_str(trimmed);
                     out.push('\n');
@@ -148,7 +137,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
         if is_raw_block_open(trimmed) {
             state.in_raw = true;
             state.raw_depth = 1;
-            out.push_str(&state.indent());
+            state.write_indent(&mut out);
             out.push_str(trimmed);
             out.push('\n');
             continue;
@@ -158,9 +147,9 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
         // 1. HTML closing tag at start of line → unindent before printing
         if let Some(tag) = parse_html_close_tag(trimmed) {
-            if is_indent_html_tag(&tag) {
+            if is_indent_html_tag(tag) {
                 state.level = state.level.saturating_sub(1);
-                out.push_str(&state.indent());
+                state.write_indent(&mut out);
                 out.push_str(trimmed);
                 out.push('\n');
                 // If the same line also has an open tag (e.g. </td><td>), handle that
@@ -172,16 +161,16 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
         if let Some(kw) = parse_template_keyword(trimmed) {
             // 2a. Branch keyword ("when"): resets to the enclosing match's base
             // level + 1, then pushes for content.
-            if BRANCH_KEYWORDS.contains(&kw.as_str()) {
+            if BRANCH_KEYWORDS.contains(&kw) {
                 if let Some(&base) = state.block_base_levels.last() {
                     state.level = base + 1;
-                    out.push_str(&state.indent());
+                    state.write_indent(&mut out);
                     out.push_str(trimmed);
                     out.push('\n');
                     state.level = base + 2;
                 } else {
                     // No enclosing custom block — no-change fallback
-                    out.push_str(&state.indent());
+                    state.write_indent(&mut out);
                     out.push_str(trimmed);
                     out.push('\n');
                 }
@@ -190,51 +179,51 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
             // 2b. Branch-aware end keyword ("endmatch"):
             // pops back to the base level recorded when the block was opened.
-            if BRANCH_END_KEYWORDS.contains(&kw.as_str()) {
+            if BRANCH_END_KEYWORDS.contains(&kw) {
                 let base = state
                     .block_base_levels
                     .pop()
                     .unwrap_or_else(|| state.level.saturating_sub(1));
                 state.level = base;
-                out.push_str(&state.indent());
+                state.write_indent(&mut out);
                 out.push_str(trimmed);
                 out.push('\n');
                 continue;
             }
 
             // 2c. Built-in closing tag (`{% endif %}`, `{% endfor %}`, …)
-            if UNINDENT_KEYWORDS.contains(&kw.as_str()) {
+            if UNINDENT_KEYWORDS.contains(&kw) {
                 state.level = state.level.saturating_sub(1);
-                out.push_str(&state.indent());
+                state.write_indent(&mut out);
                 out.push_str(trimmed);
                 out.push('\n');
                 continue;
             }
 
             // 3. Unindent-line tags (else, else if) → print at level-1
-            if UNINDENT_LINE_KEYWORDS.contains(&kw.as_str()) {
+            if UNINDENT_LINE_KEYWORDS.contains(&kw) {
                 let effective = state.level.saturating_sub(1);
-                out.push_str(&state.indent_at(effective));
+                state.write_indent_at(&mut out, effective);
                 out.push_str(trimmed);
                 out.push('\n');
                 continue;
             }
 
             // 4. Tags with no indent change (let, call, import, include, extends, …)
-            if NO_CHANGE_KEYWORDS.contains(&kw.as_str()) {
-                out.push_str(&state.indent());
+            if NO_CHANGE_KEYWORDS.contains(&kw) {
+                state.write_indent(&mut out);
                 out.push_str(trimmed);
                 out.push('\n');
                 continue;
             }
 
             // 5. Indent-opening template tag
-            if INDENT_KEYWORDS.contains(&kw.as_str()) {
+            if INDENT_KEYWORDS.contains(&kw) {
                 // Track base level for match so the "when" branch keyword can reset correctly
                 if kw == "match" {
                     state.block_base_levels.push(state.level);
                 }
-                out.push_str(&state.indent());
+                state.write_indent(&mut out);
                 out.push_str(trimmed);
                 out.push('\n');
                 state.level += 1;
@@ -246,18 +235,18 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
         if let Some((open_tag, is_self_closing, has_close_on_same_line)) =
             parse_html_open_tag(trimmed)
         {
-            if is_indent_html_tag(&open_tag) && !is_self_closing {
+            if is_indent_html_tag(open_tag) && !is_self_closing {
                 // If the closing tag is also on this same line (e.g. <td>val</td>),
                 // don't change the indent level.
                 if has_close_on_same_line {
-                    out.push_str(&state.indent());
+                    state.write_indent(&mut out);
                     out.push_str(trimmed);
                     out.push('\n');
                     continue;
                 }
 
                 let formatted = maybe_format_attributes(trimmed, state.level, opts);
-                out.push_str(&state.indent());
+                state.write_indent(&mut out);
                 out.push_str(&formatted);
                 out.push('\n');
                 state.level += 1;
@@ -270,7 +259,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
         //     so that continuation attribute lines get the correct alignment
         //     regardless of whether the tag opens an indent level.
         if let Some((tag_name, is_block)) = parse_unclosed_html_open_tag(trimmed) {
-            out.push_str(&state.indent());
+            state.write_indent(&mut out);
             out.push_str(trimmed);
             out.push('\n');
             state.multi_line_tag = Some((tag_name, is_block));
@@ -279,7 +268,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
         // 7. Default: emit at current indent level with attribute formatting
         let formatted = maybe_format_attributes(trimmed, state.level, opts);
-        out.push_str(&state.indent());
+        state.write_indent(&mut out);
         out.push_str(&formatted);
         out.push('\n');
     }
@@ -307,8 +296,8 @@ const NO_CHANGE_KEYWORDS: &[&str] = &["let", "call", "import", "include", "exten
 
 // ── Tag parsers ─────────────────────────────────────────────────────────────
 
-/// If line starts with `</tag`, return `tag` (lowercased).
-fn parse_html_close_tag(line: &str) -> Option<String> {
+/// If line starts with `</tag`, return `tag` (raw, not lowercased).
+fn parse_html_close_tag(line: &str) -> Option<&str> {
     let s = line.trim_start();
     if !s.starts_with("</") {
         return None;
@@ -320,12 +309,12 @@ fn parse_html_close_tag(line: &str) -> Option<String> {
     if end == 0 {
         return None;
     }
-    Some(rest[..end].to_lowercase())
+    Some(&rest[..end])
 }
 
 /// Extract the keyword from a template tag line, e.g. `{% when Some with (x) %}` → `"when"`.
 /// Also handles `{%- when -%}` whitespace-stripped variants.
-fn parse_template_keyword(line: &str) -> Option<String> {
+fn parse_template_keyword(line: &str) -> Option<&str> {
     let s = line.trim();
     if !s.starts_with("{%") {
         return None;
@@ -333,23 +322,32 @@ fn parse_template_keyword(line: &str) -> Option<String> {
     let inner = s[2..].trim_start_matches(['-', '+', '~', ' ', '\t']);
     // "else if" is a two-word keyword
     if inner.starts_with("else if") {
-        return Some("else if".to_string());
+        return Some("else if");
     }
-    let kw: String = inner
+    let kw = inner
         .split_whitespace()
         .next()
         .unwrap_or("")
-        .trim_end_matches(['-', '+', '~'])
-        .to_string();
-    if kw.is_empty() {
-        None
-    } else {
-        Some(kw)
+        .trim_end_matches(['-', '+', '~']);
+    if kw.is_empty() { None } else { Some(kw) }
+}
+
+/// Allocation-free check: does `text` contain `</tag>`?
+fn contains_close_tag(text: &str, tag: &str) -> bool {
+    let n = tag.len();
+    if n + 3 > text.len() {
+        return false;
     }
+    text.as_bytes().windows(n + 3).any(|w| {
+        w[0] == b'<' && w[1] == b'/'
+            && w[n + 2] == b'>'
+            && w[2..n + 2].eq_ignore_ascii_case(tag.as_bytes())
+    })
 }
 
 /// Returns `(tag_name, is_self_closing, has_matching_close_on_same_line)`.
-fn parse_html_open_tag(line: &str) -> Option<(String, bool, bool)> {
+/// `tag_name` is a slice into `line` (raw, not lowercased).
+fn parse_html_open_tag(line: &str) -> Option<(&str, bool, bool)> {
     let s = line.trim_start();
     if !s.starts_with('<') || s.starts_with("</") || s.starts_with("<!") || s.starts_with("<?") {
         return None;
@@ -361,7 +359,7 @@ fn parse_html_open_tag(line: &str) -> Option<(String, bool, bool)> {
     if end == 0 {
         return None;
     }
-    let tag = rest[..end].to_lowercase();
+    let tag = &rest[..end];  // raw, not lowercased
 
     // Use the shared scanner — correctly skips {%...%} containing `>`.
     let close_pos = super::find_html_tag_close(s)?;
@@ -371,8 +369,7 @@ fn parse_html_open_tag(line: &str) -> Option<(String, bool, bool)> {
 
     // Check if there's a matching close tag after the opening tag.
     let after_open = &s[close_pos + 1..];
-    let close_tag = format!("</{}", tag);
-    let has_close = after_open.to_lowercase().contains(&close_tag);
+    let has_close = contains_close_tag(after_open, tag);
 
     Some((tag, self_closing, has_close))
 }
@@ -411,7 +408,7 @@ fn parse_unclosed_html_open_tag(line: &str) -> Option<(String, bool)> {
     if end == 0 {
         return None;
     }
-    let tag = rest[..end].to_lowercase();
+    let tag = rest[..end].to_string();
     // Use the shared scanner — `{%...%}` containing `>` is correctly skipped.
     if super::find_html_tag_close(s).is_some() {
         return None;

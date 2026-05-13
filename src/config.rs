@@ -46,7 +46,7 @@ impl From<toml::de::Error> for ConfigError {
 pub struct FormatOptions {
     pub indent: usize,
     pub max_line_length: usize,
-    /// Sort HTML attributes alphabetically. Unhinged default: true.
+    /// Sort HTML attributes alphabetically. Default: false.
     pub sort_attributes: bool,
 }
 
@@ -55,7 +55,7 @@ impl Default for FormatOptions {
         Self {
             indent: 4,
             max_line_length: 120,
-            sort_attributes: true,
+            sort_attributes: false,
         }
     }
 }

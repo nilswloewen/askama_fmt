@@ -76,7 +76,7 @@ pub fn format(input: &str, opts: &FormatOptions) -> String {
 
     let compressed = compress::compress(&normalised);
     let expanded = expand::expand(&compressed);
-    let cleaned = condense::clean_whitespace(&expanded, opts);
+    let cleaned = condense::clean_whitespace(&expanded);
     let indented = indent::indent(&cleaned, opts);
     let condensed = condense::condense(&indented, opts);
 

@@ -81,7 +81,7 @@ See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all op
 |-----------------------|---------|---------|-----------------------------------------------------------------------------------|
 | `indent`              | integer | `4`     | Spaces per indentation level                                                      |
 | `max_line_length`     | integer | `120`   | Lines longer than this trigger attribute breaking and tag-pair collapsing         |
-| `sort_attributes`     | bool    | `true`  | Sort HTML attributes alphabetically *(unhinged default)*                          |
+| `sort_attributes`     | bool    | `false` | Sort HTML attributes alphabetically *(unhinged — opt in)*                         |
 
 ## CLI reference
 

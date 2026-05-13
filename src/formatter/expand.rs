@@ -363,10 +363,11 @@ fn break_template_tags(html: &str, kws: &[&str], spans: &[(usize, usize)]) -> St
                     html[i + 2..tag_end - 2].trim_matches(|c| c == '-' || c == '+' || c == '~');
                 let keyword = extract_keyword(inner);
 
-                let should_break = kws.iter().any(|k| {
-                    keyword == *k
-                        || keyword.starts_with(&format!("{} ", k))
-                        || keyword.starts_with(&format!("{}\t", k))
+                let should_break = kws.iter().any(|&k| {
+                    keyword == k
+                        || (keyword.len() > k.len()
+                            && keyword.starts_with(k)
+                            && matches!(keyword.as_bytes()[k.len()], b' ' | b'\t'))
                 });
 
                 if should_break {
@@ -437,14 +438,15 @@ fn find_template_tag_end(html: &str, from: usize) -> Option<usize> {
 
 /// Extract the first keyword from a template tag's inner content.
 /// `"- if let Some(x) = val "` → `"if let"`... we just need the first word.
-fn extract_keyword(inner: &str) -> String {
+fn extract_keyword(inner: &str) -> &str {
     let trimmed =
         inner.trim_start_matches(|c: char| c == '-' || c == '+' || c == '~' || c.is_whitespace());
     // "else if" is a two-word keyword in Askama
     if trimmed.starts_with("else if") {
-        return "else if".to_string();
+        return "else if";
     }
-    trimmed.split_whitespace().next().unwrap_or("").to_string()
+    trimmed.split_whitespace().next().unwrap_or("")
+        .trim_end_matches(['-', '+', '~'])
 }
 
 fn collapse_blank_lines(html: &str) -> String {

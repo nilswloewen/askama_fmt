@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.0] - 2026-05-13
+
+### Breaking changes
+
+- `FormatOptions` reduced to three fields: `indent`, `max_line_length`, `sort_attributes`.
+  All template-syntax fields (`custom_blocks`, `custom_blocks_unindent_line`, `ignore_blocks`,
+  `preserve_blank_lines`, `max_blank_lines`, `max_attribute_length`) removed.
+- `{% match %}`/`{% when %}`/`{% endmatch %}`, `{% call %}`, and all other Askama keywords
+  are now hardcoded — zero configuration required for standard Askama templates.
+- Attribute breaking threshold is now `max_line_length` (the single ruler for everything).
+- Blank lines always collapse to at most one (rustfmt-style, hardcoded).
+
+### Features
+
+- `sort_attributes` option (default `false`): opt-in alphabetical attribute sorting.
+- `{% when %}` branches indented inside `{% match %}` (Rust-style match arms).
+- `<label>` and `<span>` added to block HTML tags.
+
+### Performance
+
+- All keyword lists converted from heap-allocated `Vec<String>` per call to `const &[&str]` slices.
+- Expand pass: `Vec<char>` + per-`<` string allocations eliminated; byte-index scanning throughout.
+- Indent pass: indent strings written directly to output buffer (`std::iter::repeat_n`), no intermediate `String` allocation per line.
+- `parse_template_keyword`, `parse_html_close_tag`, `parse_html_open_tag` return `&str` slices borrowing from the input — no heap allocation per tag.
+- `contains_close_tag` uses byte-level `windows` + `eq_ignore_ascii_case` instead of `to_lowercase().contains()`.
+
 ## [0.2.0] - 2026-05-13
 
 ### Breaking changes

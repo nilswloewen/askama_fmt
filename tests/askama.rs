@@ -333,7 +333,7 @@ fn form_conditional_attr_stays_inline() {
     let src = r#"<form action="/submit" method="POST" {% if extra %} data-extra="true" {% endif %}><input type="text" name="q"></form>"#;
     let expected = "\
 <form action=\"/submit\" method=\"POST\" {% if extra %} data-extra=\"true\" {% endif %}>
-    <input name=\"q\" type=\"text\">
+    <input type=\"text\" name=\"q\">
 </form>
 ";
     assert_eq!(format(src, &opts()), expected);
@@ -347,7 +347,7 @@ fn form_conditional_attr_idempotent() {
       {% if extra %}
       data-extra=\"true\"
       {% endif %}>
-    <input name=\"q\" type=\"text\">
+    <input type=\"text\" name=\"q\">
 </form>
 ";
     assert_eq!(format(src, &opts()), src);
@@ -357,9 +357,9 @@ fn form_conditional_attr_idempotent() {
 
 #[test]
 fn self_closing_attrs_no_slash_token() {
-    // attributes sorted alphabetically; 98 chars fits within max_line_length=120
+    // 98 chars — fits within max_line_length=120, so stays on one line
     let src = r#"<input type="text" name="username" placeholder="Enter username" autocomplete="username" required />"#;
-    let expected = "<input autocomplete=\"username\" name=\"username\" placeholder=\"Enter username\" required type=\"text\" />\n";
+    let expected = "<input type=\"text\" name=\"username\" placeholder=\"Enter username\" autocomplete=\"username\" required />\n";
     assert_eq!(format(src, &opts()), expected);
 }
 
