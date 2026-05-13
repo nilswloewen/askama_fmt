@@ -61,14 +61,21 @@ indent = 4
 max_line_length = 120
 max_attribute_length = 70
 
-# Treat {% match %}...{% endmatch %} as an indented block
-custom_blocks = ["match"]
-
-# Treat {% when %} like {% else %}: rendered at the parent indent level
-custom_blocks_unindent_line = ["when"]
-
 # Keep {% call macro() %} single-line (Askama macros have no {% endcall %})
 ignore_blocks = ["call"]
+```
+
+`{% match %}`/`{% when %}` are handled automatically — no configuration needed:
+
+`{% match %}`/`{% when %}` output:
+
+```html
+{% match user.role %}
+    {% when Role::Admin %}
+        <p>Admin panel</p>
+    {% when Role::User %}
+        <p>Dashboard</p>
+{% endmatch %}
 ```
 
 See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all options documented.
@@ -80,7 +87,6 @@ See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all op
 | `indent`                      | integer      | `4`     | Spaces per indentation level                                                      |
 | `max_line_length`             | integer      | `120`   | Lines longer than this are a candidate for collapsing/expanding                   |
 | `max_attribute_length`        | integer      | `70`    | HTML attributes longer than this are broken one-per-line                          |
-| `custom_blocks`               | string array | `[]`    | Template tags that open an indented block (and `end*` closes it)                  |
 | `custom_blocks_unindent_line` | string array | `[]`    | Tags rendered at one indent level above their content (like `else`)               |
 | `ignore_blocks`               | string array | `[]`    | Tags kept inline — not expanded or indented                                       |
 | `preserve_blank_lines`        | bool         | `false` | Keep blank lines as-is instead of collapsing them                                 |
@@ -101,8 +107,7 @@ Options:
       --indent <N>                     Spaces per indentation level
       --max-line-length <N>            Maximum line length
       --max-attribute-length <N>       Maximum attribute length before breaking
-      --custom-blocks <LIST>           Comma-separated indent blocks (e.g. "match")
-      --custom-blocks-unindent-line <LIST>  e.g. "when"
+      --custom-blocks-unindent-line <LIST>  Comma-separated unindent-line blocks
       --ignore-blocks <LIST>           e.g. "call"
       --config <PATH>                  Explicit path to askama_fmt.toml
   -h, --help

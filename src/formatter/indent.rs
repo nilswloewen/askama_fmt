@@ -198,7 +198,9 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             // 2b. Branch-aware end keyword (end forms of custom_blocks):
             // pops back to the base level recorded when the block was opened.
             if branch_end_kws.contains(&kw.as_str().to_string()) {
-                let base = state.block_base_levels.pop()
+                let base = state
+                    .block_base_levels
+                    .pop()
                     .unwrap_or_else(|| state.level.saturating_sub(1));
                 state.level = base;
                 out.push_str(&state.indent());
@@ -235,8 +237,8 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
             // 5. Indent-opening template tag
             if indent_kws.contains(&kw.as_str().to_string()) {
-                // Track base level for custom_blocks so branch keywords can reset correctly
-                if opts.custom_blocks.contains(&kw.as_str().to_string()) {
+                // Track base level for match so the "when" branch keyword can reset correctly
+                if kw == "match" {
                     state.block_base_levels.push(state.level);
                 }
                 out.push_str(&state.indent());
@@ -297,8 +299,8 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
 // ── Keyword classification ──────────────────────────────────────────────────
 
-fn indent_keywords(opts: &FormatOptions) -> Vec<String> {
-    let mut kws: Vec<String> = vec![
+fn indent_keywords(_opts: &FormatOptions) -> Vec<String> {
+    vec![
         "if".into(),
         "for".into(),
         "macro".into(),
@@ -306,15 +308,12 @@ fn indent_keywords(opts: &FormatOptions) -> Vec<String> {
         "filter".into(),
         "with".into(),
         "raw".into(),
-    ];
-    for b in &opts.custom_blocks {
-        kws.push(b.clone());
-    }
-    kws
+        "match".into(),
+    ]
 }
 
-fn unindent_keywords(opts: &FormatOptions) -> Vec<String> {
-    let mut kws: Vec<String> = vec![
+fn unindent_keywords(_opts: &FormatOptions) -> Vec<String> {
+    vec![
         "endif".into(),
         "endfor".into(),
         "endmacro".into(),
@@ -322,41 +321,29 @@ fn unindent_keywords(opts: &FormatOptions) -> Vec<String> {
         "endfilter".into(),
         "endwith".into(),
         "endraw".into(),
-    ];
-    for b in &opts.custom_blocks {
-        kws.push(format!("end{}", b));
-    }
-    kws
+    ]
 }
 
-fn unindent_line_keywords(opts: &FormatOptions) -> Vec<String> {
-    let mut kws: Vec<String> = vec!["else".into(), "else if".into()];
-    for b in &opts.custom_blocks_unindent_line {
-        kws.push(b.clone());
-    }
-    kws
+fn unindent_line_keywords(_opts: &FormatOptions) -> Vec<String> {
+    vec!["else".into(), "else if".into()]
 }
 
 fn branch_keywords(_opts: &FormatOptions) -> Vec<String> {
     vec!["when".into()]
 }
 
-fn branch_end_keywords(opts: &FormatOptions) -> Vec<String> {
-    opts.custom_blocks.iter().map(|b| format!("end{}", b)).collect()
+fn branch_end_keywords(_opts: &FormatOptions) -> Vec<String> {
+    vec!["endmatch".into()]
 }
 
-fn no_change_keywords(opts: &FormatOptions) -> Vec<String> {
-    let mut kws: Vec<String> = vec![
+fn no_change_keywords(_opts: &FormatOptions) -> Vec<String> {
+    vec![
         "let".into(),
+        "call".into(),
         "import".into(),
         "include".into(),
         "extends".into(),
-    ];
-    for b in &opts.ignore_blocks {
-        kws.push(b.clone());
-        kws.push(format!("end{}", b));
-    }
-    kws
+    ]
 }
 
 // ── Tag parsers ─────────────────────────────────────────────────────────────

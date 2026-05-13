@@ -56,12 +56,6 @@ pub struct FormatOptions {
     pub indent: usize,
     pub max_line_length: usize,
     pub max_attribute_length: usize,
-    /// Tags that open an indented block, e.g. `["match"]`
-    pub custom_blocks: Vec<String>,
-    /// Tags rendered at indent-1 without changing level, e.g. `["else"]`
-    pub custom_blocks_unindent_line: Vec<String>,
-    /// Tags kept single-line (not expanded), e.g. `["call"]`
-    pub ignore_blocks: Vec<String>,
     pub preserve_blank_lines: bool,
     pub max_blank_lines: usize,
 }
@@ -72,9 +66,6 @@ impl Default for FormatOptions {
             indent: 4,
             max_line_length: 120,
             max_attribute_length: 70,
-            custom_blocks: vec![],
-            custom_blocks_unindent_line: vec![],
-            ignore_blocks: vec![],
             preserve_blank_lines: false,
             max_blank_lines: 0,
         }
@@ -115,24 +106,8 @@ impl FormatOptions {
         if let Some(v) = ov.max_attribute_length {
             self.max_attribute_length = v;
         }
-        if let Some(ref v) = ov.custom_blocks {
-            self.custom_blocks = split_csv(v);
-        }
-        if let Some(ref v) = ov.custom_blocks_unindent_line {
-            self.custom_blocks_unindent_line = split_csv(v);
-        }
-        if let Some(ref v) = ov.ignore_blocks {
-            self.ignore_blocks = split_csv(v);
-        }
         self
     }
-}
-
-fn split_csv(s: &str) -> Vec<String> {
-    s.split(',')
-        .map(|p| p.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
 }
 
 /// CLI flag overrides applied on top of `askama_fmt.toml` values.
@@ -141,8 +116,5 @@ pub struct CliOverrides {
     pub indent: Option<usize>,
     pub max_line_length: Option<usize>,
     pub max_attribute_length: Option<usize>,
-    pub custom_blocks: Option<String>,
-    pub custom_blocks_unindent_line: Option<String>,
-    pub ignore_blocks: Option<String>,
     pub config: Option<PathBuf>,
 }

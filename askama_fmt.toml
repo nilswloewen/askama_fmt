@@ -10,21 +10,6 @@ max_line_length = 120
 # HTML attributes whose combined length exceeds this are broken one-per-line.
 max_attribute_length = 70
 
-# Template tags that open an indented block.
-# The closing tag is inferred automatically: "match" → "endmatch".
-custom_blocks = ["match"]
-
-# Template tags rendered at one indent level above their content,
-# matching the behaviour of {% else %} and {% elif %}.
-# Note: {% when %} is handled automatically as a branch separator inside
-# {% match %} blocks — no configuration needed.
-custom_blocks_unindent_line = []
-
-# Template tags kept on the same line as surrounding content.
-# Use for {% call macro() %} — Askama macro invocations are single-line
-# statements with no matching {% endcall %}.
-ignore_blocks = ["call"]
-
 # Keep blank lines as-is. When false (the default), consecutive blank lines
 # are collapsed according to max_blank_lines.
 preserve_blank_lines = false

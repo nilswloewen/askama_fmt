@@ -4,8 +4,6 @@ use pretty_assertions::assert_eq;
 fn opts() -> FormatOptions {
     FormatOptions {
         indent: 4,
-        custom_blocks: vec!["match".into()],
-        ignore_blocks: vec!["call".into()],
         ..Default::default()
     }
 }

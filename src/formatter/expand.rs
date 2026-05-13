@@ -81,7 +81,7 @@ pub const BLOCK_HTML_TAGS: &[&str] = &[
 
 /// Askama template keywords that get their own lines.
 /// Built at runtime so we can include custom_blocks / ignore_blocks.
-fn template_break_keywords(opts: &FormatOptions) -> Vec<String> {
+fn template_break_keywords(_opts: &FormatOptions) -> Vec<String> {
     let mut kws: Vec<String> = vec![
         "if".into(),
         "else".into(),
@@ -102,32 +102,11 @@ fn template_break_keywords(opts: &FormatOptions) -> Vec<String> {
         "include".into(),
         "extends".into(),
         "import".into(),
+        "match".into(),
+        "endmatch".into(),
     ];
-    // custom_blocks contribute both open and end forms
-    for b in &opts.custom_blocks {
-        kws.push(b.clone());
-        kws.push(format!("end{}", b));
-    }
-    // custom_blocks_unindent_line also need their own lines
-    for b in &opts.custom_blocks_unindent_line {
-        if !kws.contains(b) {
-            kws.push(b.clone());
-        }
-    }
     // "when" is a hardcoded branch keyword for {% match %}/{% when %} patterns
-    if !kws.contains(&"when".to_string()) {
-        kws.push("when".into());
-    }
-    // ignore_blocks: only add endXXX (they still need a line), but NOT the
-    // opening keyword itself — that stays inline.
-    for b in &opts.ignore_blocks {
-        let end = format!("end{}", b);
-        if !kws.contains(&end) {
-            kws.push(end);
-        }
-        // Remove the opening keyword if it was added above (it stays inline)
-        kws.retain(|k| k != b);
-    }
+    kws.push("when".into());
     kws
 }
 
@@ -185,7 +164,10 @@ fn compute_raw_spans(html: &str) -> Vec<(usize, usize)> {
                 let open = format!("<{}", tag);
                 if html[i..].starts_with(&open) {
                     let close_tag = format!("</{}>", tag);
-                    let block_end = html[i..].find(close_tag.as_str()).map(|o| i + o).unwrap_or(len);
+                    let block_end = html[i..]
+                        .find(close_tag.as_str())
+                        .map(|o| i + o)
+                        .unwrap_or(len);
                     spans.push((i, (block_end + close_tag.len()).min(len)));
                     i = (block_end + close_tag.len()).min(len);
                     advanced = true;

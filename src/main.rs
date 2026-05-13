@@ -46,18 +46,6 @@ struct Cli {
     #[arg(long, value_name = "N")]
     max_attribute_length: Option<usize>,
 
-    /// Comma-separated list of custom indent blocks (e.g. "match")
-    #[arg(long, value_name = "LIST")]
-    custom_blocks: Option<String>,
-
-    /// Comma-separated list of custom unindent-line blocks (e.g. "when")
-    #[arg(long, value_name = "LIST")]
-    custom_blocks_unindent_line: Option<String>,
-
-    /// Comma-separated list of blocks to treat as single-line (e.g. "call")
-    #[arg(long, value_name = "LIST")]
-    ignore_blocks: Option<String>,
-
     /// Explicit path to askama_fmt.toml config file
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
@@ -70,9 +58,6 @@ fn main() {
         indent: cli.indent,
         max_line_length: cli.max_line_length,
         max_attribute_length: cli.max_attribute_length,
-        custom_blocks: cli.custom_blocks,
-        custom_blocks_unindent_line: cli.custom_blocks_unindent_line,
-        ignore_blocks: cli.ignore_blocks,
         config: cli.config.clone(),
     };
 
