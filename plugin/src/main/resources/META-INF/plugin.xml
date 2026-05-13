@@ -1,0 +1,48 @@
+<idea-plugin>
+    <id>com.askamafmt</id>
+    <name>Askama Formatter</name>
+    <vendor email="nils@nilsloewen.com">Nils Loewen</vendor>
+
+    <description><![CDATA[
+        Format <a href="https://github.com/askama-rs/askama">Askama</a> HTML templates using
+        <a href="https://github.com/nilswloewen/askama_fmt">askama_fmt</a>.<br><br>
+
+        <b>Features:</b>
+        <ul>
+            <li>Format the current file via <b>Tools → Askama Formatter → Format with askama_fmt</b></li>
+            <li>Default hotkey: <b>Ctrl+Alt+Shift+F</b> (reassignable in Settings → Keymap)</li>
+            <li>Optional format-on-save via <b>Tools → Askama Formatter → Format on Save</b></li>
+            <li>Respects <code>askama_fmt.toml</code> in your project automatically</li>
+        </ul>
+
+        <b>Binary resolution:</b> uses <code>askama_fmt</code> from <code>$PATH</code> if available
+        (e.g. via <code>cargo install askama_fmt</code>), otherwise falls back to the bundled binary.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.askamafmt.AskamaFmtSettings"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener class="com.askamafmt.AskamaFmtSaveListener"
+                  topic="com.intellij.openapi.fileEditor.FileDocumentManagerListener"/>
+    </applicationListeners>
+
+    <actions>
+        <group id="AskamaFmt.Menu" text="Askama Formatter" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="AskamaFmt.Format"
+                    class="com.askamafmt.AskamaFmtAction"
+                    text="Format with askama_fmt"
+                    description="Format the current file with askama_fmt">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+            </action>
+            <action id="AskamaFmt.ToggleSaveFormat"
+                    class="com.askamafmt.AskamaFmtToggleSaveAction"
+                    text="Format on Save"
+                    description="Automatically format .askama.html files on save"/>
+        </group>
+    </actions>
+</idea-plugin>
