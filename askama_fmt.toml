@@ -10,5 +10,3 @@ max_line_length = 120
 # HTML attributes whose combined length exceeds this are broken one-per-line.
 max_attribute_length = 70
 
-# Maximum consecutive blank lines to keep (rustfmt-style). Default: 1.
-max_blank_lines = 1

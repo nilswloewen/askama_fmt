@@ -82,7 +82,6 @@ See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all op
 | `indent`              | integer | `4`     | Spaces per indentation level                                                      |
 | `max_line_length`     | integer | `120`   | Lines longer than this are a candidate for collapsing/expanding                   |
 | `max_attribute_length`| integer | `70`    | HTML attributes longer than this are broken one-per-line                          |
-| `max_blank_lines`     | integer | `1`     | Maximum consecutive blank lines to keep (set to 0 to remove all blank lines)      |
 
 ## CLI reference
 

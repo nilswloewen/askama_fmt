@@ -47,8 +47,6 @@ pub struct FormatOptions {
     pub indent: usize,
     pub max_line_length: usize,
     pub max_attribute_length: usize,
-    /// Maximum consecutive blank lines to keep. Defaults to 1 (rustfmt-style).
-    pub max_blank_lines: usize,
 }
 
 impl Default for FormatOptions {
@@ -57,7 +55,6 @@ impl Default for FormatOptions {
             indent: 4,
             max_line_length: 120,
             max_attribute_length: 70,
-            max_blank_lines: 1,
         }
     }
 }
