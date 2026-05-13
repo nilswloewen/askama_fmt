@@ -1,0 +1,144 @@
+{%- extends "base.html" -%}
+{%- import "macros/icons.html" as icons -%}
+
+{%- block title -%}{{ user.name }} — Dashboard{%- endblock -%}
+
+{%- block content -%}
+<div class="dashboard">
+
+    {# ── Header ──────────────────────────────────────────────────────────── #}
+    <header class="dashboard__header">
+        <h1 class="dashboard__title">
+            {% call icons::user() %} Welcome, {{ user.name }}
+        </h1>
+        <nav class="dashboard__nav">
+            {% for link in nav_links %}
+                <a class="nav__link {% if link.active %}nav__link--active{% endif %}"
+                   href="{{ link.url }}">
+                    {{ link.label }}
+                </a>
+            {% endfor %}
+        </nav>
+    </header>
+
+    {# ── Role badge ───────────────────────────────────────────────────────── #}
+    <div class="role-badge">
+        {% match user.role %}
+            {% when Role::SuperAdmin %}
+                <span class="badge badge--red">Super Admin</span>
+            {% when Role::Admin %}
+                <span class="badge badge--orange">Admin</span>
+            {% when Role::Moderator with (region) %}
+                <span class="badge badge--blue">Moderator — {{ region }}</span>
+            {% when Role::User %}
+                <span class="badge badge--gray">Member</span>
+        {% endmatch %}
+    </div>
+
+    {# ── Stats grid ───────────────────────────────────────────────────────── #}
+    {% let total = stats.posts + stats.comments %}
+    <section class="stats">
+        <h2>Activity</h2>
+        <div class="stats__grid">
+            {% for stat in stats.items %}
+                <div class="stat-card {% if stat.value > stat.threshold %}stat-card--alert{% endif %}">
+                    <label class="stat-card__label">{{ stat.label }}</label>
+                    <span class="stat-card__value">{{ stat.value }}</span>
+                    {% if let Some(delta) = stat.delta %}
+                        <span class="stat-card__delta {% if delta > 0 %}positive{% else %}negative{% endif %}">
+                            {% if delta > 0 %}+{% endif %}{{ delta }}%
+                        </span>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        <p class="stats__total">Total activity: <strong>{{ total }}</strong></p>
+    </section>
+
+    {# ── Recent posts table ───────────────────────────────────────────────── #}
+    <section class="posts">
+        <h2>Recent Posts</h2>
+        {% if posts.is_empty() %}
+            <p class="posts__empty">No posts yet. <a href="/posts/new">Create one?</a></p>
+        {% else %}
+            <table class="posts__table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Published</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for post in posts %}
+                        <tr class="{% if loop.first %}posts__row--first{% endif %}">
+                            <td>
+                                <a href="/posts/{{ post.id }}">{{ post.title }}</a>
+                            </td>
+                            <td>
+                                {% match post.status %}
+                                    {% when PostStatus::Published %}
+                                        <span class="status status--green">Published</span>
+                                    {% when PostStatus::Draft %}
+                                        <span class="status status--gray">Draft</span>
+                                    {% when PostStatus::Archived %}
+                                        <span class="status status--red">Archived</span>
+                                {% endmatch %}
+                            </td>
+                            <td>
+                                {% match post.published_at %}
+                                    {% when Some with (date) %}
+                                        <time datetime="{{ date.iso }}">{{ date.display }}</time>
+                                    {% when None %}
+                                        <span class="text--muted">—</span>
+                                {% endmatch %}
+                            </td>
+                            <td class="posts__actions">
+                                {% call icons::edit() %}
+                                {% call icons::delete() %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </section>
+
+    {# ── Sidebar ──────────────────────────────────────────────────────────── #}
+    <aside class="sidebar">
+        <div class="sidebar__section">
+            <h3>Quick Actions</h3>
+            <form action="/posts/new" method="POST"
+                  {% if !user.can_post %} data-disabled="true" {% endif %}>
+                <label for="quick-title">New post title</label>
+                <input id="quick-title"
+                       type="text"
+                       name="title"
+                       placeholder="Enter title…"
+                       autocomplete="off"
+                       required />
+                <button class="btn btn--primary" type="submit">Create</button>
+            </form>
+        </div>
+
+        <div class="sidebar__section">
+            <h3>Notifications</h3>
+            {% for notif in notifications %}
+                {% if loop.first %}
+                    <ul class="notif-list">
+                {% endif %}
+                        <li class="notif-list__item notif-list__item--{{ notif.kind }}">
+                            {{ notif.message }}
+                        </li>
+                {% if loop.last %}
+                    </ul>
+                {% endif %}
+            {% else %}
+                <p class="text--muted">All caught up!</p>
+            {% endfor %}
+        </div>
+    </aside>
+
+</div>
+{%- endblock -%}
