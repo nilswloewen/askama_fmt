@@ -1,7 +1,8 @@
 /// Put block-level HTML and Askama template tags on their own lines.
 /// HTML tags that cause line breaks (block-level + structural inline-blocks).
-/// Inline elements like `<span>`, `<a>`, `<strong>` etc. are intentionally excluded.
+/// Inline elements like `<strong>` etc. are intentionally excluded.
 pub const BLOCK_HTML_TAGS: &[&str] = &[
+    "a",
     "address",
     "article",
     "aside",

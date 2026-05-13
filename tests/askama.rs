@@ -522,3 +522,29 @@ fn raw_block_not_broken_by_expand() {
         out
     );
 }
+
+// ── anchor indentation ────────────────────────────────────────────────────────
+
+#[test]
+fn anchor_with_template_children_indented() {
+    let src = "\
+<a href=\"{{ get_wo_step_url }}\" data-no-htmx>
+{% call icons::receipt_text() %}
+<span>Onboarding</span>
+</a>
+";
+    let expected = "\
+<a href=\"{{ get_wo_step_url }}\" data-no-htmx>
+    {% call icons::receipt_text() %}
+    <span>Onboarding</span>
+</a>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn anchor_short_collapses_to_one_line() {
+    let src = "<a href=\"/home\">\n    Home\n</a>\n";
+    let expected = "<a href=\"/home\">Home</a>\n";
+    assert_eq!(format(src, &opts()), expected);
+}
