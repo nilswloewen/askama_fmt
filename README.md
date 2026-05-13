@@ -59,7 +59,7 @@ Drop an `askama_fmt.toml` at your project root (or anywhere in the directory tre
 ```toml
 indent = 4
 max_line_length = 120
-max_attribute_length = 70
+sort_attributes = false
 ```
 
 All Askama template syntax is handled automatically — no extra configuration needed. `{% match %}`/`{% when %}`, `{% call %}`, `{% if let %}`, `{% let %}`, and `else if` chains just work.
