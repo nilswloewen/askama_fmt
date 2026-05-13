@@ -75,7 +75,7 @@ pub fn format(input: &str, opts: &FormatOptions) -> String {
     let normalised = input.replace("\r\n", "\n").replace('\r', "\n");
 
     let compressed = compress::compress(&normalised);
-    let expanded = expand::expand(&compressed, opts);
+    let expanded = expand::expand(&compressed);
     let cleaned = condense::clean_whitespace(&expanded, opts);
     let indented = indent::indent(&cleaned, opts);
     let condensed = condense::condense(&indented, opts);

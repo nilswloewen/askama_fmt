@@ -79,13 +79,6 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
     let mut state = IndentState::new(opts);
     let mut out = String::with_capacity(html.len());
 
-    // Pre-build keyword sets from config
-    let indent_kws = indent_keywords(opts);
-    let unindent_kws = unindent_keywords(opts);
-    let unindent_line_kws = unindent_line_keywords(opts);
-    let no_change_kws = no_change_keywords(opts);
-    let branch_kws = branch_keywords(opts);
-    let branch_end_kws = branch_end_keywords(opts);
 
     for line in html.lines() {
         let trimmed = line.trim();
@@ -177,9 +170,9 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
         // 2. Template tag classification
         if let Some(kw) = parse_template_keyword(trimmed) {
-            // 2a. Branch keyword (e.g. "when" with custom_blocks_branch = ["when"]):
-            // resets to the enclosing block's base level + 1, then pushes for content.
-            if branch_kws.contains(&kw.as_str().to_string()) {
+            // 2a. Branch keyword ("when"): resets to the enclosing match's base
+            // level + 1, then pushes for content.
+            if BRANCH_KEYWORDS.contains(&kw.as_str()) {
                 if let Some(&base) = state.block_base_levels.last() {
                     state.level = base + 1;
                     out.push_str(&state.indent());
@@ -195,9 +188,9 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
                 continue;
             }
 
-            // 2b. Branch-aware end keyword (end forms of custom_blocks):
+            // 2b. Branch-aware end keyword ("endmatch"):
             // pops back to the base level recorded when the block was opened.
-            if branch_end_kws.contains(&kw.as_str().to_string()) {
+            if BRANCH_END_KEYWORDS.contains(&kw.as_str()) {
                 let base = state
                     .block_base_levels
                     .pop()
@@ -210,7 +203,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             }
 
             // 2c. Built-in closing tag (`{% endif %}`, `{% endfor %}`, …)
-            if unindent_kws.contains(&kw.as_str().to_string()) {
+            if UNINDENT_KEYWORDS.contains(&kw.as_str()) {
                 state.level = state.level.saturating_sub(1);
                 out.push_str(&state.indent());
                 out.push_str(trimmed);
@@ -219,7 +212,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             }
 
             // 3. Unindent-line tags (else, else if) → print at level-1
-            if unindent_line_kws.contains(&kw.as_str().to_string()) {
+            if UNINDENT_LINE_KEYWORDS.contains(&kw.as_str()) {
                 let effective = state.level.saturating_sub(1);
                 out.push_str(&state.indent_at(effective));
                 out.push_str(trimmed);
@@ -228,7 +221,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             }
 
             // 4. Tags with no indent change (let, call, import, include, extends, …)
-            if no_change_kws.contains(&kw.as_str().to_string()) {
+            if NO_CHANGE_KEYWORDS.contains(&kw.as_str()) {
                 out.push_str(&state.indent());
                 out.push_str(trimmed);
                 out.push('\n');
@@ -236,7 +229,7 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             }
 
             // 5. Indent-opening template tag
-            if indent_kws.contains(&kw.as_str().to_string()) {
+            if INDENT_KEYWORDS.contains(&kw.as_str()) {
                 // Track base level for match so the "when" branch keyword can reset correctly
                 if kw == "match" {
                     state.block_base_levels.push(state.level);
@@ -299,52 +292,19 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
 // ── Keyword classification ──────────────────────────────────────────────────
 
-fn indent_keywords(_opts: &FormatOptions) -> Vec<String> {
-    vec![
-        "if".into(),
-        "for".into(),
-        "macro".into(),
-        "block".into(),
-        "filter".into(),
-        "with".into(),
-        "raw".into(),
-        "match".into(),
-    ]
-}
+const INDENT_KEYWORDS: &[&str] =
+    &["if", "for", "macro", "block", "filter", "with", "raw", "match"];
 
-fn unindent_keywords(_opts: &FormatOptions) -> Vec<String> {
-    vec![
-        "endif".into(),
-        "endfor".into(),
-        "endmacro".into(),
-        "endblock".into(),
-        "endfilter".into(),
-        "endwith".into(),
-        "endraw".into(),
-    ]
-}
+const UNINDENT_KEYWORDS: &[&str] =
+    &["endif", "endfor", "endmacro", "endblock", "endfilter", "endwith", "endraw"];
 
-fn unindent_line_keywords(_opts: &FormatOptions) -> Vec<String> {
-    vec!["else".into(), "else if".into()]
-}
+const UNINDENT_LINE_KEYWORDS: &[&str] = &["else", "else if"];
 
-fn branch_keywords(_opts: &FormatOptions) -> Vec<String> {
-    vec!["when".into()]
-}
+const BRANCH_KEYWORDS: &[&str] = &["when"];
 
-fn branch_end_keywords(_opts: &FormatOptions) -> Vec<String> {
-    vec!["endmatch".into()]
-}
+const BRANCH_END_KEYWORDS: &[&str] = &["endmatch"];
 
-fn no_change_keywords(_opts: &FormatOptions) -> Vec<String> {
-    vec![
-        "let".into(),
-        "call".into(),
-        "import".into(),
-        "include".into(),
-        "extends".into(),
-    ]
-}
+const NO_CHANGE_KEYWORDS: &[&str] = &["let", "call", "import", "include", "extends"];
 
 // ── Tag parsers ─────────────────────────────────────────────────────────────
 

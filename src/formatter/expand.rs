@@ -1,6 +1,4 @@
 /// Put block-level HTML and Askama template tags on their own lines.
-use crate::config::FormatOptions;
-
 /// HTML tags that cause line breaks (block-level + structural inline-blocks).
 /// Inline elements like `<span>`, `<a>`, `<strong>` etc. are intentionally excluded.
 pub const BLOCK_HTML_TAGS: &[&str] = &[
@@ -80,35 +78,18 @@ pub const BLOCK_HTML_TAGS: &[&str] = &[
 ];
 
 /// Askama template keywords that get their own lines.
-/// Built at runtime so we can include custom_blocks / ignore_blocks.
-fn template_break_keywords(_opts: &FormatOptions) -> Vec<String> {
-    let mut kws: Vec<String> = vec![
-        "if".into(),
-        "else".into(),
-        "else if".into(),
-        "endif".into(),
-        "for".into(),
-        "endfor".into(),
-        "macro".into(),
-        "endmacro".into(),
-        "block".into(),
-        "endblock".into(),
-        "filter".into(),
-        "endfilter".into(),
-        "with".into(),
-        "endwith".into(),
-        "raw".into(),
-        "endraw".into(),
-        "include".into(),
-        "extends".into(),
-        "import".into(),
-        "match".into(),
-        "endmatch".into(),
-    ];
-    // "when" is a hardcoded branch keyword for {% match %}/{% when %} patterns
-    kws.push("when".into());
-    kws
-}
+const TEMPLATE_BREAK_KEYWORDS: &[&str] = &[
+    "if", "else", "else if", "endif",
+    "for", "endfor",
+    "macro", "endmacro",
+    "block", "endblock",
+    "filter", "endfilter",
+    "with", "endwith",
+    "raw", "endraw",
+    "include", "extends", "import",
+    "match", "endmatch",
+    "when",
+];
 
 // ── Raw-span pre-computation ─────────────────────────────────────────────────
 
@@ -194,24 +175,21 @@ fn find_close(s: &str, from: usize, needle: &str) -> Option<usize> {
     s[from..].find(needle).map(|o| from + o)
 }
 
-pub fn expand(html: &str, opts: &FormatOptions) -> String {
-    let html_tags: Vec<String> = BLOCK_HTML_TAGS.iter().map(|s| s.to_string()).collect();
-    let tmpl_kws = template_break_keywords(opts);
-
+pub fn expand(html: &str) -> String {
     // Pre-compute raw spans once per pass so neither break function needs to
     // re-scan from byte 0 on every tag match.
     let raw1 = compute_raw_spans(html);
-    let out = break_html_tags(html, &html_tags, &raw1);
+    let out = break_html_tags(html, BLOCK_HTML_TAGS, &raw1);
 
     let raw2 = compute_raw_spans(&out);
-    let out = break_template_tags(&out, &tmpl_kws, &raw2);
+    let out = break_template_tags(&out, TEMPLATE_BREAK_KEYWORDS, &raw2);
 
     // Collapse runs of blank lines to at most one blank line
     collapse_blank_lines(&out)
 }
 
 /// Insert `\n` before and after HTML block tags when not already on own line.
-fn break_html_tags(html: &str, tags: &[String], spans: &[(usize, usize)]) -> String {
+fn break_html_tags(html: &str, tags: &[&str], spans: &[(usize, usize)]) -> String {
     let mut out = String::with_capacity(html.len() + 256);
     let bytes = html.as_bytes();
     let len = bytes.len();
@@ -267,7 +245,7 @@ fn break_html_tags(html: &str, tags: &[String], spans: &[(usize, usize)]) -> Str
 
 /// Match an HTML block opening/closing tag at the start of `s`.
 /// Returns `(full match string, byte length of match)` or `None`.
-fn match_html_block_tag(s: &str, tags: &[String]) -> Option<(String, usize)> {
+fn match_html_block_tag(s: &str, tags: &[&str]) -> Option<(String, usize)> {
     if !s.starts_with('<') {
         return None;
     }
@@ -285,7 +263,7 @@ fn match_html_block_tag(s: &str, tags: &[String]) -> Option<(String, usize)> {
         return None;
     }
     let name = rest2[..name_end].to_lowercase();
-    if !tags.contains(&name) {
+    if !tags.contains(&name.as_str()) {
         return None;
     }
 
@@ -296,7 +274,7 @@ fn match_html_block_tag(s: &str, tags: &[String]) -> Option<(String, usize)> {
 }
 
 /// Insert `\n` before and after Askama template tags.
-fn break_template_tags(html: &str, kws: &[String], spans: &[(usize, usize)]) -> String {
+fn break_template_tags(html: &str, kws: &[&str], spans: &[(usize, usize)]) -> String {
     let mut out = String::with_capacity(html.len() + 256);
     let bytes = html.as_bytes();
     let len = bytes.len();
