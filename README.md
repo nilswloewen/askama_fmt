@@ -1,5 +1,9 @@
 # askama_fmt
 
+[![crates.io](https://img.shields.io/crates/v/askama_fmt)](https://crates.io/crates/askama_fmt)
+[![docs.rs](https://docs.rs/askama_fmt/badge.svg)](https://docs.rs/askama_fmt)
+[![license](https://img.shields.io/crates/l/askama_fmt)](LICENSE)
+
 A formatter for [Askama](https://github.com/askama-rs/askama) HTML templates.
 
 Formats `.askama.html` template files using the same compress → expand → indent → condense pipeline as [djLint](https://djlint.com), with first-class support for Askama's Rust-specific template syntax: `{% match %}`/`{% when %}`, `{% call macro() %}`, `{% if let %}`, `{% let %}`, and `else if` chains.
