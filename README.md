@@ -6,7 +6,15 @@
 
 A formatter for [Askama](https://github.com/askama-rs/askama) HTML templates.
 
-Formats `.askama.html` template files using the same compress → expand → indent → condense pipeline as [djLint](https://djlint.com), with first-class support for Askama's Rust-specific template syntax: `{% match %}`/`{% when %}`, `{% call macro() %}`, `{% if let %}`, `{% let %}`, and `else if` chains.
+Formats `.askama.html` template files using the same compress → expand → indent → condense pipeline
+as [djLint](https://djlint.com), with first-class support for Askama's Rust-specific template syntax:
+
+- `{% match %}`
+- `{% when %}`
+- `{% call macro() %}`
+- `{% if let %}`
+- `{% let %}`
+- `else if` chains
 
 ## Install
 
@@ -28,17 +36,21 @@ cargo install --path .
 # Format all .askama.html files in a directory (recursive)
 askama_fmt templates/
 
-# Format using a glob pattern
+# Format using a glob pattern — any extension is accepted
 askama_fmt "src/**/*.askama.html"
+askama_fmt "src/**/*.html"
+
+# Format a single file — any extension is accepted
+askama_fmt src/templates/user.html
 
 # Check without writing (exits 1 if any file would change — useful in CI)
 askama_fmt --check templates/
-
-# Format a single file
-askama_fmt src/templates/user.askama.html
 ```
 
-Config is read from the nearest `askama_fmt.toml` found by walking up from the target file's directory. CLI flags override config file values.
+When given a **directory**, only `*.askama.html` files are discovered. When given a **file path or glob**, any extension is formatted.
+
+Config is read from the nearest `askama_fmt.toml` found by walking up from the target file's directory. CLI flags
+override config file values.
 
 ## Config
 
@@ -63,16 +75,16 @@ See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all op
 
 ## Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `indent` | integer | `4` | Spaces per indentation level |
-| `max_line_length` | integer | `120` | Lines longer than this are a candidate for collapsing/expanding |
-| `max_attribute_length` | integer | `70` | HTML attributes longer than this are broken one-per-line |
-| `custom_blocks` | string array | `[]` | Template tags that open an indented block (and `end*` closes it) |
-| `custom_blocks_unindent_line` | string array | `[]` | Tags rendered at one indent level above their content (like `else`) |
-| `ignore_blocks` | string array | `[]` | Tags kept inline — not expanded or indented |
-| `preserve_blank_lines` | bool | `false` | Keep blank lines as-is instead of collapsing them |
-| `max_blank_lines` | integer | `0` | Maximum consecutive blank lines to preserve (when `preserve_blank_lines` is true) |
+| Option                        | Type         | Default | Description                                                                       |
+|-------------------------------|--------------|---------|-----------------------------------------------------------------------------------|
+| `indent`                      | integer      | `4`     | Spaces per indentation level                                                      |
+| `max_line_length`             | integer      | `120`   | Lines longer than this are a candidate for collapsing/expanding                   |
+| `max_attribute_length`        | integer      | `70`    | HTML attributes longer than this are broken one-per-line                          |
+| `custom_blocks`               | string array | `[]`    | Template tags that open an indented block (and `end*` closes it)                  |
+| `custom_blocks_unindent_line` | string array | `[]`    | Tags rendered at one indent level above their content (like `else`)               |
+| `ignore_blocks`               | string array | `[]`    | Tags kept inline — not expanded or indented                                       |
+| `preserve_blank_lines`        | bool         | `false` | Keep blank lines as-is instead of collapsing them                                 |
+| `max_blank_lines`             | integer      | `0`     | Maximum consecutive blank lines to preserve (when `preserve_blank_lines` is true) |
 
 ## CLI reference
 
