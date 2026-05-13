@@ -41,22 +41,13 @@ impl From<toml::de::Error> for ConfigError {
 }
 
 /// All formatting options. Deserializes directly from `askama_fmt.toml`.
-///
-/// Example `askama_fmt.toml`:
-/// ```toml
-/// indent = 4
-/// max_line_length = 120
-/// custom_blocks = ["match"]
-/// custom_blocks_unindent_line = ["when"]
-/// ignore_blocks = ["call"]
-/// ```
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct FormatOptions {
     pub indent: usize,
     pub max_line_length: usize,
     pub max_attribute_length: usize,
-    pub preserve_blank_lines: bool,
+    /// Maximum consecutive blank lines to keep. Defaults to 1 (rustfmt-style).
     pub max_blank_lines: usize,
 }
 
@@ -66,8 +57,7 @@ impl Default for FormatOptions {
             indent: 4,
             max_line_length: 120,
             max_attribute_length: 70,
-            preserve_blank_lines: false,
-            max_blank_lines: 0,
+            max_blank_lines: 1,
         }
     }
 }

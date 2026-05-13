@@ -102,11 +102,7 @@ pub fn condense(html: &str, opts: &FormatOptions) -> String {
 pub fn clean_whitespace(html: &str, opts: &FormatOptions) -> String {
     let mut result = String::with_capacity(html.len());
     let mut consecutive_blanks = 0u32;
-    let max_blanks = if opts.preserve_blank_lines {
-        u32::MAX
-    } else {
-        opts.max_blank_lines as u32 + 1
-    };
+    let max_blanks = opts.max_blank_lines as u32;
 
     for line in html.lines() {
         let stripped = line.trim_end();
