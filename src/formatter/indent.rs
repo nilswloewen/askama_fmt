@@ -462,6 +462,7 @@ pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -
         return s.to_string();
     }
 
+
     // Sort attributes alphabetically (unhinged default: on).
     // Skip if template syntax is present — reordering {% if %}...{% endif %}
     // conditional attributes would break semantics.
@@ -508,20 +509,6 @@ pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -
     out_lines.join("\n")
 }
 
-/// Sort attributes alphabetically by name. Skips reordering if any attribute
-/// contains template syntax (`{%` or `{{`) — those are conditional attribute
-/// injections whose relative order is load-bearing.
-fn sort_attributes(mut attrs: Vec<String>) -> Vec<String> {
-    if attrs.iter().any(|a| a.contains("{%") || a.contains("{{")) {
-        return attrs;
-    }
-    attrs.sort_by(|a, b| {
-        let ka = a.split('=').next().unwrap_or(a).trim();
-        let kb = b.split('=').next().unwrap_or(b).trim();
-        ka.to_lowercase().cmp(&kb.to_lowercase())
-    });
-    attrs
-}
 
 /// Split an HTML tag string into the `<tag attrs>` portion and anything after `>`.
 /// e.g. `<a href="x">text</a>` → (`<a href="x">`, `text</a>`)
@@ -547,6 +534,21 @@ fn parse_attributes(tag: &str) -> Vec<String> {
     let attrs_raw = &tag[start..end];
     let attrs_str = attrs_raw.trim_end_matches('/').trim_end();
     split_attrs(attrs_str)
+}
+
+/// Sort attributes alphabetically by name. Skips reordering if any attribute
+/// contains template syntax (`{%` or `{{`) — those are conditional attribute
+/// injections whose relative order is load-bearing.
+fn sort_attributes(mut attrs: Vec<String>) -> Vec<String> {
+    if attrs.iter().any(|a| a.contains("{%") || a.contains("{{")) {
+        return attrs;
+    }
+    attrs.sort_by(|a, b| {
+        let ka = a.split('=').next().unwrap_or(a).trim();
+        let kb = b.split('=').next().unwrap_or(b).trim();
+        ka.to_lowercase().cmp(&kb.to_lowercase())
+    });
+    attrs
 }
 
 fn split_attrs(s: &str) -> Vec<String> {
