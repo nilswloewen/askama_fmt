@@ -462,9 +462,14 @@ pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -
         return s.to_string();
     }
 
-    // Sort attributes alphabetically. Skip if template syntax is present —
-    // reordering {% if %}...{% endif %} conditional attributes would break semantics.
-    let attrs = sort_attributes(attrs);
+    // Sort attributes alphabetically (unhinged default: on).
+    // Skip if template syntax is present — reordering {% if %}...{% endif %}
+    // conditional attributes would break semantics.
+    let attrs = if opts.sort_attributes {
+        sort_attributes(attrs)
+    } else {
+        attrs
+    };
 
     let is_self_closing = tag_only.trim_end().ends_with("/>");
     let close = if is_self_closing { " />" } else { ">" };

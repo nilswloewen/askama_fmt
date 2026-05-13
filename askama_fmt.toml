@@ -7,3 +7,7 @@ indent = 4
 # Lines longer than this are candidates for collapsing short tag pairs
 # and for breaking long HTML attribute lists onto separate lines.
 max_line_length = 120
+
+# Sort HTML attributes alphabetically.
+# Unhinged default: true. Set to false if you prefer manual attribute order.
+sort_attributes = true
