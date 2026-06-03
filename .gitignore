@@ -1,4 +1,8 @@
 .claude
+.env
 .idea
 .playwright-mcp/
 target
+creds/chain.crt
+creds/private.pem
+creds/private_encrypted.pem
