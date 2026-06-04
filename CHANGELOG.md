@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.3] - 2026-06-03
+
+### Features
+
+- `{# askama_fmt: skip-file #}` directive — anywhere in a template, returns the
+  file byte-for-byte unchanged.
+- `{# askama_fmt: off #}` / `{# askama_fmt: on #}` directives — preserve the
+  region between them verbatim while the rest of the file is formatted normally.
+  Whitespace-control marks (`{#- … -#}`) are tolerated on both forms.
+
 ## [0.3.0] - 2026-05-13
 
 ### Breaking changes

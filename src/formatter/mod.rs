@@ -2,6 +2,7 @@ pub mod compress;
 pub mod condense;
 pub mod expand;
 pub mod indent;
+pub mod skip;
 
 use crate::config::FormatOptions;
 
@@ -68,22 +69,34 @@ pub fn format(input: &str, opts: &FormatOptions) -> String {
         return input.to_string();
     }
 
+    // `{# askama_fmt: skip-file #}` short-circuits the whole pipeline.
+    if skip::has_skip_file(input) {
+        return input.to_string();
+    }
+
     // Detect and preserve original line endings
     let crlf = input.contains("\r\n");
 
     // Normalise to LF
     let normalised = input.replace("\r\n", "\n").replace('\r', "\n");
 
-    let compressed = compress::compress(&normalised);
+    // `{# askama_fmt: off #}` .. `{# askama_fmt: on #}` regions are pulled out
+    // and replaced with comment placeholders before formatting, then patched
+    // back in afterwards so their bytes survive verbatim.
+    let (stripped, regions) = skip::extract_regions(&normalised);
+
+    let compressed = compress::compress(&stripped);
     let expanded = expand::expand(&compressed);
     let cleaned = condense::clean_whitespace(&expanded);
     let indented = indent::indent(&cleaned, opts);
     let condensed = condense::condense(&indented, opts);
 
+    let restored = skip::restore_regions(&condensed, &regions);
+
     // Restore CRLF if original used it
     if crlf {
-        condensed.replace('\n', "\r\n")
+        restored.replace('\n', "\r\n")
     } else {
-        condensed
+        restored
     }
 }

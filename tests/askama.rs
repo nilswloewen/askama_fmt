@@ -548,3 +548,121 @@ fn anchor_short_collapses_to_one_line() {
     let expected = "<a href=\"/home\">Home</a>\n";
     assert_eq!(format(src, &opts()), expected);
 }
+
+// ── Ignore directives ────────────────────────────────────────────────────────
+
+#[test]
+fn skip_file_directive_returns_input_verbatim() {
+    let src = "\
+{# askama_fmt: skip-file #}
+<div>
+   <span>kept exactly</span>
+        <p>indentation untouched</p>
+</div>
+";
+    assert_eq!(format(src, &opts()), src);
+}
+
+#[test]
+fn skip_file_directive_works_with_whitespace_control() {
+    let src = "\
+{#- askama_fmt: skip-file -#}
+<div>  raw  </div>
+";
+    assert_eq!(format(src, &opts()), src);
+}
+
+#[test]
+fn skip_file_directive_anywhere_in_file_skips_whole_file() {
+    let src = "\
+<div>
+<span>not formatted</span>
+</div>
+{# askama_fmt: skip-file #}
+";
+    assert_eq!(format(src, &opts()), src);
+}
+
+#[test]
+fn region_off_on_preserves_inner_content_verbatim() {
+    let src = "\
+<p>before</p>
+{# askama_fmt: off #}
+   <span>   weird   spacing   </span>
+       <p>kept as-is</p>
+{# askama_fmt: on #}
+<p>after</p>
+";
+    let expected = "\
+<p>before</p>
+{# askama_fmt: off #}
+   <span>   weird   spacing   </span>
+       <p>kept as-is</p>
+{# askama_fmt: on #}
+<p>after</p>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn region_off_on_with_whitespace_control_marks() {
+    let src = "\
+<div>before</div>
+{#- askama_fmt: off -#}
+   <span>untouched</span>
+{#- askama_fmt: on -#}
+<div>after</div>
+";
+    let formatted = format(src, &opts());
+    assert!(formatted.contains("   <span>untouched</span>"));
+    assert!(formatted.contains("{#- askama_fmt: off -#}"));
+    assert!(formatted.contains("{#- askama_fmt: on -#}"));
+}
+
+#[test]
+fn region_off_on_does_not_format_template_syntax_inside() {
+    // Askama syntax inside an off region must not be re-indented even though
+    // it would normally open/close blocks.
+    let src = "\
+<div>
+{# askama_fmt: off #}
+{% if cond %}
+<span>x</span>
+{% endif %}
+{# askama_fmt: on #}
+</div>
+";
+    let formatted = format(src, &opts());
+    assert!(formatted.contains("{% if cond %}\n<span>x</span>\n{% endif %}"));
+}
+
+#[test]
+fn multiple_off_on_regions_in_one_file() {
+    let src = "\
+<div>a</div>
+{# askama_fmt: off #}
+  one
+{# askama_fmt: on #}
+<div>b</div>
+{# askama_fmt: off #}
+  two
+{# askama_fmt: on #}
+<div>c</div>
+";
+    let formatted = format(src, &opts());
+    assert!(formatted.contains("  one"));
+    assert!(formatted.contains("  two"));
+    assert!(formatted.contains("<div>a</div>"));
+    assert!(formatted.contains("<div>b</div>"));
+    assert!(formatted.contains("<div>c</div>"));
+}
+
+#[test]
+fn off_without_matching_on_is_inert() {
+    // No matching `on` — the directive is recognised but no extraction happens,
+    // so the rest of the file is formatted normally.
+    let src = "<div><span>x</span></div>\n{# askama_fmt: off #}\n";
+    let formatted = format(src, &opts());
+    assert!(formatted.contains("{# askama_fmt: off #}"));
+    assert!(formatted.contains("<div>"));
+}

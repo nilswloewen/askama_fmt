@@ -80,15 +80,27 @@ pub const BLOCK_HTML_TAGS: &[&str] = &[
 
 /// Askama template keywords that get their own lines.
 const TEMPLATE_BREAK_KEYWORDS: &[&str] = &[
-    "if", "else", "else if", "endif",
-    "for", "endfor",
-    "macro", "endmacro",
-    "block", "endblock",
-    "filter", "endfilter",
-    "with", "endwith",
-    "raw", "endraw",
-    "include", "extends", "import",
-    "match", "endmatch",
+    "if",
+    "else",
+    "else if",
+    "endif",
+    "for",
+    "endfor",
+    "macro",
+    "endmacro",
+    "block",
+    "endblock",
+    "filter",
+    "endfilter",
+    "with",
+    "endwith",
+    "raw",
+    "endraw",
+    "include",
+    "extends",
+    "import",
+    "match",
+    "endmatch",
     "when",
 ];
 
@@ -446,7 +458,10 @@ fn extract_keyword(inner: &str) -> &str {
     if trimmed.starts_with("else if") {
         return "else if";
     }
-    trimmed.split_whitespace().next().unwrap_or("")
+    trimmed
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
         .trim_end_matches(['-', '+', '~'])
 }
 

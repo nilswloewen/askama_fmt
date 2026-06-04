@@ -3,8 +3,8 @@ use crate::config::FormatOptions;
 use crate::formatter::expand::BLOCK_HTML_TAGS;
 
 const VOID_HTML_TAGS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input",
-    "link", "meta", "param", "source", "track", "wbr",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
 ];
 
 fn is_void_html_tag(name: &str) -> bool {
@@ -13,7 +13,9 @@ fn is_void_html_tag(name: &str) -> bool {
 
 /// HTML tags whose opening tag increases indent.
 fn is_indent_html_tag(name: &str) -> bool {
-    BLOCK_HTML_TAGS.iter().any(|&t| t.eq_ignore_ascii_case(name))
+    BLOCK_HTML_TAGS
+        .iter()
+        .any(|&t| t.eq_ignore_ascii_case(name))
         && !is_void_html_tag(name)
         && !"hr".eq_ignore_ascii_case(name)
         && !"br".eq_ignore_ascii_case(name)
@@ -68,7 +70,6 @@ impl<'a> IndentState<'a> {
 pub fn indent(html: &str, opts: &FormatOptions) -> String {
     let mut state = IndentState::new(opts);
     let mut out = String::with_capacity(html.len());
-
 
     for line in html.lines() {
         let trimmed = line.trim();
@@ -280,11 +281,19 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
 // ── Keyword classification ──────────────────────────────────────────────────
 
-const INDENT_KEYWORDS: &[&str] =
-    &["if", "for", "macro", "block", "filter", "with", "raw", "match"];
+const INDENT_KEYWORDS: &[&str] = &[
+    "if", "for", "macro", "block", "filter", "with", "raw", "match",
+];
 
-const UNINDENT_KEYWORDS: &[&str] =
-    &["endif", "endfor", "endmacro", "endblock", "endfilter", "endwith", "endraw"];
+const UNINDENT_KEYWORDS: &[&str] = &[
+    "endif",
+    "endfor",
+    "endmacro",
+    "endblock",
+    "endfilter",
+    "endwith",
+    "endraw",
+];
 
 const UNINDENT_LINE_KEYWORDS: &[&str] = &["else", "else if"];
 
@@ -329,7 +338,11 @@ fn parse_template_keyword(line: &str) -> Option<&str> {
         .next()
         .unwrap_or("")
         .trim_end_matches(['-', '+', '~']);
-    if kw.is_empty() { None } else { Some(kw) }
+    if kw.is_empty() {
+        None
+    } else {
+        Some(kw)
+    }
 }
 
 /// Allocation-free check: does `text` contain `</tag>`?
@@ -339,7 +352,8 @@ fn contains_close_tag(text: &str, tag: &str) -> bool {
         return false;
     }
     text.as_bytes().windows(n + 3).any(|w| {
-        w[0] == b'<' && w[1] == b'/'
+        w[0] == b'<'
+            && w[1] == b'/'
             && w[n + 2] == b'>'
             && w[2..n + 2].eq_ignore_ascii_case(tag.as_bytes())
     })
@@ -359,7 +373,7 @@ fn parse_html_open_tag(line: &str) -> Option<(&str, bool, bool)> {
     if end == 0 {
         return None;
     }
-    let tag = &rest[..end];  // raw, not lowercased
+    let tag = &rest[..end]; // raw, not lowercased
 
     // Use the shared scanner — correctly skips {%...%} containing `>`.
     let close_pos = super::find_html_tag_close(s)?;
@@ -459,7 +473,6 @@ pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -
         return s.to_string();
     }
 
-
     // Sort attributes alphabetically (unhinged default: on).
     // Skip if template syntax is present — reordering {% if %}...{% endif %}
     // conditional attributes would break semantics.
@@ -505,7 +518,6 @@ pub fn maybe_format_attributes(line: &str, level: usize, opts: &FormatOptions) -
     }
     out_lines.join("\n")
 }
-
 
 /// Split an HTML tag string into the `<tag attrs>` portion and anything after `>`.
 /// e.g. `<a href="x">text</a>` → (`<a href="x">`, `text</a>`)

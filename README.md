@@ -75,6 +75,35 @@ All Askama template syntax is handled automatically — no extra configuration n
 
 See [`askama_fmt.toml`](askama_fmt.toml) for the full default config with all options documented.
 
+## Ignoring code
+
+Two directives let you opt parts of a template (or a whole file) out of formatting. Both ride along inside Askama comments (`{# … #}`), so the template engine itself ignores them.
+
+**Whole file** — anywhere in the file:
+
+```html
+{# askama_fmt: skip-file #}
+<div>
+   <span>this file is left exactly as written</span>
+</div>
+```
+
+**Region** — everything between the markers is preserved byte-for-byte:
+
+```html
+<p>formatted normally</p>
+{# askama_fmt: off #}
+   <pre>
+   keep
+       this
+   weird
+   </pre>
+{# askama_fmt: on #}
+<p>formatted normally again</p>
+```
+
+Whitespace-control marks work too: `{#- askama_fmt: off -#}`, etc.
+
 ## Options
 
 | Option                | Type    | Default | Description                                                                       |
