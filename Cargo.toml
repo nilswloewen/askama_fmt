@@ -10,7 +10,10 @@ categories = ["command-line-utilities", "development-tools"]
 repository = "https://github.com/nilswloewen/askama_fmt"
 documentation = "https://docs.rs/askama_fmt"
 readme = "README.md"
-exclude = ["justfile", "CLAUDE.md"]
+# `plugin/` bundles ~19 MiB of prebuilt binaries for the JetBrains plugin and
+# `creds/` + `.env.default` document release credentials — none of it is of any
+# use to a crates.io consumer.
+exclude = ["justfile", "CLAUDE.md", "plugin", "creds", ".env.default"]
 rust-version = "1.85.1"
 
 [[bin]]
