@@ -10,7 +10,11 @@ import com.intellij.openapi.components.service
 @State(name = "AskamaFmtSettings", storages = [Storage("askama_fmt.xml")])
 class AskamaFmtSettings : PersistentStateComponent<AskamaFmtSettings.State> {
 
-    data class State(var formatOnSave: Boolean = false)
+    data class State(
+        var formatOnSave: Boolean = false,
+        /** Explicit askama_fmt location. Empty means auto-detect. */
+        var binaryPath: String = "",
+    )
 
     private var _state = State()
 
@@ -20,6 +24,10 @@ class AskamaFmtSettings : PersistentStateComponent<AskamaFmtSettings.State> {
     var formatOnSave: Boolean
         get() = _state.formatOnSave
         set(value) { _state.formatOnSave = value }
+
+    var binaryPath: String
+        get() = _state.binaryPath
+        set(value) { _state.binaryPath = value }
 
     companion object {
         val instance: AskamaFmtSettings get() = service()

@@ -37,6 +37,20 @@
 - Collapsing a template pair can bring its wrapping HTML pair within `max_line_length`,
   so the condense passes now run to a fixed point.
 
+### JetBrains plugin 0.4.0
+
+- **No longer bundles the askama_fmt binary.** `cargo install askama_fmt` is now required —
+  a reasonable ask, since everyone formatting Askama templates already has cargo. The bundle
+  had shipped 0.3.0 binaries in the 0.3.3 release, and a stale bundled copy silently shadowed
+  whatever the user had installed. Plugin download drops from 8.7 MB to 1.6 MB.
+- **Binary resolution is fixed.** `which`/`where` output was captured with
+  `redirectErrorStream(true)` and its exit code ignored, so a miss returned the error text
+  (`which: no askama_fmt in (...)`) as if it were a path. It now checks the exit code, and
+  additionally probes cargo's install root — a GUI-launched IDE does not source the user's
+  shell profile, so `~/.cargo/bin` is routinely absent from its `PATH`.
+- **New setting.** Settings → Tools → Askama Formatter takes an explicit binary path for
+  installs outside `$PATH` and `~/.cargo/bin`.
+
 ### Compatibility
 
 Templates written for askama 0.14 / 0.15 still format correctly: a bare `{% call foo() %}`

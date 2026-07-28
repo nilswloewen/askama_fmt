@@ -15,14 +15,21 @@
             <li>Respects <code>askama_fmt.toml</code> in your project automatically</li>
         </ul>
 
-        <b>Binary resolution:</b> uses <code>askama_fmt</code> from <code>$PATH</code> if available
-        (e.g. via <code>cargo install askama_fmt</code>), otherwise falls back to the bundled binary.
+        <b>Requires the askama_fmt binary:</b>
+        <pre>cargo install askama_fmt</pre>
+        The plugin finds it on <code>$PATH</code> or in cargo's install root
+        (<code>~/.cargo/bin</code>). If it lives elsewhere, set the path under
+        <b>Settings → Tools → Askama Formatter</b>.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.askamafmt.AskamaFmtSettings"/>
+        <applicationConfigurable parentId="tools"
+                                 id="com.askamafmt.settings"
+                                 displayName="Askama Formatter"
+                                 instance="com.askamafmt.AskamaFmtConfigurable"/>
     </extensions>
 
     <applicationListeners>
