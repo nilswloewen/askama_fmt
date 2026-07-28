@@ -1,6 +1,6 @@
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.0.21"
-    id("org.jetbrains.intellij.platform") version "2.3.0"
+    id("org.jetbrains.intellij.platform") version "2.18.1"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -22,7 +22,8 @@ dependencies {
         rustRover("2024.3")
         pluginVerifier()
         zipSigner()
-        instrumentationTools()
+        // `instrumentationTools()` was removed in IntelliJ Platform Gradle
+        // Plugin 2.x — code instrumentation is wired up automatically now.
     }
 }
 
