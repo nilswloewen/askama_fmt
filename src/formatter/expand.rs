@@ -83,6 +83,7 @@ const TEMPLATE_BREAK_KEYWORDS: &[&str] = &[
     "if",
     "else",
     "else if",
+    "elif",
     "endif",
     "for",
     "endfor",
@@ -102,7 +103,23 @@ const TEMPLATE_BREAK_KEYWORDS: &[&str] = &[
     "match",
     "endmatch",
     "when",
+    "endwhen",
+    // Askama 0.16: `{% call %}` is a block that must be closed by `{% endcall %}`.
+    "call",
+    "endcall",
+    // Block-form `{% let x %}` / `{% set x %}` (no `=`) — see `opens_block`.
+    "let",
+    "set",
+    "endlet",
+    "endset",
 ];
+
+/// HTML elements whose body is verbatim text, never markup to re-indent.
+///
+/// `<pre>` and `<textarea>` are whitespace-significant — indenting their
+/// contents changes what the page renders. `<script>` and `<style>` hold code
+/// that is not ours to reformat.
+pub const RAW_CONTENT_TAGS: &[&str] = &["pre", "script", "style", "textarea"];
 
 // ── Raw-span pre-computation ─────────────────────────────────────────────────
 
@@ -111,7 +128,7 @@ const TEMPLATE_BREAK_KEYWORDS: &[&str] = &[
 /// iff `s < p && p < e`, matching the original `inside_raw_span` semantics).
 ///
 /// Raw spans: `{# ... #}`, `<!-- ... -->`, `{% raw %}...{% endraw %}`,
-/// `<pre>...</pre>`, `<script>...</script>`, `<style>...</style>`.
+/// `<pre>`, `<script>`, `<style>`, `<textarea>`.
 fn compute_raw_spans(html: &str) -> Vec<(usize, usize)> {
     let bytes = html.as_bytes();
     let len = bytes.len();
@@ -151,10 +168,10 @@ fn compute_raw_spans(html: &str) -> Vec<(usize, usize)> {
                 continue;
             }
         }
-        // <pre>, <script>, <style>
+        // <pre>, <script>, <style>, <textarea>
         if bytes[i] == b'<' {
             let mut advanced = false;
-            for tag in &["pre", "script", "style"] {
+            for tag in RAW_CONTENT_TAGS {
                 let open = format!("<{}", tag);
                 if html[i..].starts_with(&open) {
                     let close_tag = format!("</{}>", tag);
@@ -209,6 +226,26 @@ fn break_html_tags(html: &str, tags: &[&str], spans: &[(usize, usize)]) -> Strin
     let mut i = 0usize; // byte offset
 
     while i < len {
+        // Copy Askama constructs through verbatim.  Their contents are Rust
+        // expressions, not markup — a generic type hint such as
+        // `{% macro row(cells: Vec<Td>) %}` must not be split on `<Td>`.
+        if bytes[i] == b'{'
+            && i + 1 < len
+            && matches!(bytes[i + 1], b'%' | b'{' | b'#')
+            && !is_in_raw_span(spans, i)
+        {
+            let end = match bytes[i + 1] {
+                b'%' => find_template_tag_end(html, i + 2),
+                b'{' => find_close(html, i + 2, "}}").map(|e| e + 2),
+                _ => find_close(html, i + 2, "#}").map(|e| e + 2),
+            };
+            if let Some(end) = end {
+                out.push_str(&html[i..end]);
+                i = end;
+                continue;
+            }
+        }
+
         // Check for `<` that starts an HTML block tag (open or close)
         if bytes[i] == b'<' {
             let rest = &html[i..]; // free slice — no allocation
@@ -297,6 +334,9 @@ fn break_template_tags(html: &str, kws: &[&str], spans: &[(usize, usize)]) -> St
                         // position are conditional attributes and must not be broken out.
     let mut in_html_open_tag = false;
     let mut html_attr_quote: Option<u8> = None;
+    // `call` / `let` / `set` only get their own line when they really open a
+    // block — an askama ≤ 0.15 `{% call foo() %}` statement stays inline.
+    let mut pairs = super::BlockPairs::scan(html);
 
     while i < len {
         // --- HTML open-tag state machine ---
@@ -376,12 +416,19 @@ fn break_template_tags(html: &str, kws: &[&str], spans: &[(usize, usize)]) -> St
                     html[i + 2..tag_end - 2].trim_matches(|c| c == '-' || c == '+' || c == '~');
                 let keyword = extract_keyword(inner);
 
-                let should_break = kws.iter().any(|&k| {
+                let mut should_break = kws.iter().any(|&k| {
                     keyword == k
                         || (keyword.len() > k.len()
                             && keyword.starts_with(k)
                             && matches!(keyword.as_bytes()[k.len()], b' ' | b'\t'))
                 });
+                if should_break {
+                    should_break = match keyword {
+                        "call" => pairs.claim("call"),
+                        kw @ ("let" | "set") => super::let_opens_block(inner) && pairs.claim(kw),
+                        _ => true,
+                    };
+                }
 
                 if should_break {
                     let already_own_line = out
@@ -450,19 +497,9 @@ fn find_template_tag_end(html: &str, from: usize) -> Option<usize> {
 }
 
 /// Extract the first keyword from a template tag's inner content.
-/// `"- if let Some(x) = val "` → `"if let"`... we just need the first word.
+/// `"- if let Some(x) = val "` → `"if"`.
 fn extract_keyword(inner: &str) -> &str {
-    let trimmed =
-        inner.trim_start_matches(|c: char| c == '-' || c == '+' || c == '~' || c.is_whitespace());
-    // "else if" is a two-word keyword in Askama
-    if trimmed.starts_with("else if") {
-        return "else if";
-    }
-    trimmed
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(['-', '+', '~'])
+    super::leading_keyword(inner)
 }
 
 fn collapse_blank_lines(html: &str) -> String {

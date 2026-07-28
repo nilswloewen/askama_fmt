@@ -36,25 +36,32 @@ File extension filtering only applies to **directory** walking — only `*.askam
 
 `formatter/mod.rs::format()` runs five sequential passes on the template string:
 
-1. **compress** (`compress.rs`) — Flattens multi-line HTML opening tags to a single line using `fancy-regex`. Skips tags whose attribute list contains `{%...%}` (those must stay multi-line for the expand pass to work correctly).
+1. **compress** (`compress.rs`) — Flattens multi-line HTML opening tags to a single line using `fancy-regex`. Skips tags whose attribute list contains `{%...%}` (those must stay multi-line for the expand pass to work correctly), and skips any match starting inside a template construct.
 
-2. **expand** (`expand.rs`) — Puts block-level HTML tags and Askama template tags each on their own line. Runs two sub-passes: HTML block tags first, then template tags. Template tags inside HTML attribute lists (conditional attrs like `{% if cond %}class="x"{% endif %}`) are intentionally kept inline. Raw spans (`{# #}`, `<!-- -->`, `{% raw %}`, `<pre>`, `<script>`, `<style>`) are pre-computed once per pass via `compute_raw_spans` and checked with `is_in_raw_span` (binary search) — previously O(n) per tag, now O(log k).
+2. **expand** (`expand.rs`) — Puts block-level HTML tags and Askama template tags each on their own line. Runs two sub-passes: HTML block tags first, then template tags. The HTML sub-pass copies `{% %}` / `{{ }}` / `{# #}` through verbatim — their contents are Rust, not markup. Template tags inside HTML attribute lists (conditional attrs like `{% if cond %}class="x"{% endif %}`) are intentionally kept inline. Raw spans (`{# #}`, `<!-- -->`, `{% raw %}`, and each of `RAW_CONTENT_TAGS`) are pre-computed once per pass via `compute_raw_spans` and checked with `is_in_raw_span` (binary search) — previously O(n) per tag, now O(log k).
 
 3. **clean_whitespace** (`condense.rs`) — Strips trailing whitespace and collapses excess blank lines. Runs before indent so the indenter sees clean input.
 
-4. **indent** (`indent.rs`) — Line-by-line state machine. Tracks indent level, raw-block state (`<pre>`, `<script>`, `<style>`, `{% raw %}`), multi-line HTML opening tags, and a `block_base_levels` stack for branch-aware blocks. All Askama keywords are hardcoded into five buckets:
-   - **branch** (`when`): resets to the enclosing match's base level + 1, pushes for content; `block_base_levels` stack tracks the base level of each open `match`
-   - **branch-end** (`endmatch`): pops `block_base_levels` to restore the match's opening level
-   - **indent-opening** (`if`, `for`, `macro`, `block`, `filter`, `with`, `raw`, `match`): prints at current level, pushes +1
-   - **unindent-closing** (`endif`, `endfor`, `endmacro`, …): pops −1 then prints
-   - **unindent-line** (`else`, `else if`): prints at level−1, level unchanged
-   - **no-change** (`let`, `call`, `include`, `import`, `extends`): prints at current level, level unchanged
+4. **indent** (`indent.rs`) — Line-by-line state machine. Tracks indent level, raw-block state (`expand::RAW_CONTENT_TAGS` = `<pre>`, `<script>`, `<style>`, `<textarea>`, plus `{% raw %}`) — inside a raw block every line is emitted **verbatim**, and `</pre>` / `</textarea>` are not re-indented because the whitespace before them is part of the element's value, multi-line HTML opening tags, multi-line Askama tags (a macro signature broken over several lines), and a `block_base_levels` stack for branch-aware blocks. `classify()` maps each hardcoded keyword to an `Effect`, applied as `open_effect` (before printing) + `close_effect` (after):
+   - **Branch** (`when`): resets to the enclosing match's base level + 1, pushes for content; `block_base_levels` stack tracks the base level of each open `match`
+   - **BranchInnerEnd** (`endwhen`): closes one arm, back to its `{% when %}` level
+   - **BranchEnd** (`endmatch`): pops `block_base_levels` to restore the match's opening level
+   - **Indent** (`if`, `for`, `macro`, `block`, `filter`, `with`, `raw`, `match`): prints at current level, pushes +1
+   - **Unindent** (`endif`, `endfor`, `endmacro`, `endcall`, `endlet`, `endset`, …): pops −1 then prints
+   - **UnindentLine** (`else`, `else if`, `elif`): prints at level−1, level unchanged
+   - **NoChange** (`include`, `import`, `extends`, `break`, `continue`, `mut`, `decl`, `declare`): prints at current level, level unchanged
 
-5. **condense** (`condense.rs`) — Collapses short tag pairs back onto one line if the result fits within `max_line_length`. Two sub-passes: HTML pairs first, then template pairs.
+   `call`, `let` and `set` are classified at runtime rather than by a fixed bucket — see `BlockPairs` below.
 
-### Shared `find_html_tag_close`
+5. **condense** (`condense.rs`) — Collapses short tag pairs back onto one line if the result fits within `max_line_length`. Each round runs HTML pairs then template pairs, and rounds repeat to a fixed point (collapsing `{% call x() %}{% endcall %}` can bring a wrapping `<span>` within reach). A body is only collapsed when the result is genuinely one line; raw-content tags (`script`, `style`, `pre`) are the exception, where pulling the first line back up restores what the author wrote.
 
-`formatter/mod.rs::find_html_tag_close()` is used by every pass to locate the `>` that closes an HTML opening tag. It's necessary because naively scanning for `>` breaks on `{% if x > 0 %}` inside attributes. The scanner skips over `{%...%}` and `{{...}}` delimiters and respects quoted attribute values.
+### Shared helpers in `formatter/mod.rs`
+
+- `find_html_tag_close()` locates the `>` that closes an HTML opening tag. Necessary because naively scanning for `>` breaks on `{% if x > 0 %}` inside attributes. Skips `{%...%}` / `{{...}}` and respects quoted attribute values.
+- `template_spans()` + `in_span()` give the byte ranges of every `{% %}` / `{{ }}` / `{# #}`. Passes that scan for HTML must treat these as opaque — askama 0.16 macro type hints (`Vec<Td>`, `Option<Body>`) otherwise read as HTML tags and get rewritten.
+- `leading_keyword()` / `tag_keyword()` extract a tag's keyword, stopping at the first non-identifier byte so the caller-args form `{% call(item) each(items) %}` still yields `call`. `else if` is the one two-word keyword.
+- `let_opens_block()` distinguishes `{% let x = 1 %}` (statement) from `{% let x %}` (block, closed by `{% endlet %}`) — the block form is the one with no `=`.
+- `BlockPairs` counts `endcall` / `endlet` / `endset` up front, and each opener claims one. An opener with no closer left is the askama ≤ 0.15 statement form (`{% call foo() %}`, `{% let x %}` forward declaration) and must not shift the indent level. Both `expand` and `indent` use this so their decisions agree.
 
 ### Configuration
 
@@ -70,4 +77,6 @@ File extension filtering only applies to **directory** walking — only `*.askam
 
 ### Tests
 
-All tests are integration tests in `tests/askama.rs`. They call `format()` directly with inline input/expected strings. The shared `opts()` helper is just `FormatOptions { indent: 4, ..Default::default() }` — no syntax configuration needed.
+All tests are integration tests in `tests/askama.rs` (plus a few unit tests in `formatter/skip.rs`). They call `format()` directly with inline input/expected strings. The shared `opts()` helper is just `FormatOptions { indent: 4, ..Default::default() }` — no syntax configuration needed.
+
+When changing template-syntax handling, check output against the real parser rather than by eye: `askama_parser` (same version as askama) exposes `Ast::from_str(src, None, &Syntax::default())`, so a throwaway binary can confirm that a formatted template still parses and that a syntax form is actually valid. It is deliberately **not** a dev-dependency — askama 0.16 needs Rust 1.88, above this crate's MSRV.

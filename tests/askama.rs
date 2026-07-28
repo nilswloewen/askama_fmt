@@ -203,8 +203,36 @@ fn import_and_call() {
 
 #[test]
 fn call_block_form() {
+    // Short enough to collapse, exactly like `{% if %}` / `{% for %}` pairs.
     let src = "{% call wrapper() %}<p>inner</p>{% endcall %}";
-    let expected = "{% call wrapper() %}\n<p>inner</p>\n{% endcall %}\n";
+    let expected = "{% call wrapper() %}<p>inner</p>{% endcall %}\n";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn call_block_indents_body() {
+    let src = "{% call card() %}<div class=\"body\"><p>Some reasonably long paragraph of content here</p></div>{% endcall %}";
+    let expected = "\
+{% call card() %}
+    <div class=\"body\">
+        <p>Some reasonably long paragraph of content here</p>
+    </div>
+{% endcall %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// A bare `{% call %}` with no `{% endcall %}` anywhere is the askama ≤ 0.15
+/// statement form — it must not open an indent level.
+#[test]
+fn call_statement_form_does_not_indent() {
+    let src = "<div>\n{% call icons::add() %}\n<p>after</p>\n</div>";
+    let expected = "\
+<div>
+    {% call icons::add() %}
+    <p>after</p>
+</div>
+";
     assert_eq!(format(src, &opts()), expected);
 }
 
@@ -665,4 +693,589 @@ fn off_without_matching_on_is_inert() {
     let formatted = format(src, &opts());
     assert!(formatted.contains("{# askama_fmt: off #}"));
     assert!(formatted.contains("<div>"));
+}
+
+// ── Askama 0.16 syntax ───────────────────────────────────────────────────────
+
+#[test]
+fn elif_branch() {
+    let src =
+        "{% if a %}<p>1</p>{% elif b %}<p>2</p>{% elif c %}<p>3</p>{% else %}<p>4</p>{% endif %}";
+    let expected = "\
+{% if a %}
+    <p>1</p>
+{% elif b %}
+    <p>2</p>
+{% elif c %}
+    <p>3</p>
+{% else %}
+    <p>4</p>
+{% endif %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn let_block_form_indents_body() {
+    let src =
+        "{% let body %}<article><h1>T</h1><p>Captured block content</p></article>{% endlet %}";
+    let expected = "\
+{% let body %}
+    <article>
+        <h1>T</h1>
+        <p>Captured block content</p>
+    </article>
+{% endlet %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn set_block_form_indents_body() {
+    let src = "{% set body %}<div><p>Captured block content here</p></div>{% endset %}";
+    let expected = "\
+{% set body %}
+    <div>
+        <p>Captured block content here</p>
+    </div>
+{% endset %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// `{% let x = 1 %}` is a statement, not a block — no `{% endlet %}`, no indent.
+#[test]
+fn let_value_form_is_a_statement() {
+    let src = "<div>\n{% let n = 1 %}\n<p>{{ n }}</p>\n</div>";
+    let expected = "\
+<div>
+    {% let n = 1 %}
+    <p>{{ n }}</p>
+</div>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn endwhen_closes_match_arm() {
+    let src = "{% match v %}{% when Some(a) %}<p>{{ a }}</p>{% endwhen %}{% when None %}<p>none</p>{% endwhen %}{% endmatch %}";
+    let expected = "\
+{% match v %}
+    {% when Some(a) %}
+        <p>{{ a }}</p>
+    {% endwhen %}
+    {% when None %}
+        <p>none</p>
+    {% endwhen %}
+{% endmatch %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn match_else_arm() {
+    let src = "{% match v %}{% when A %}<b>a</b>{% else %}<b>other</b>{% endmatch %}";
+    let expected = "\
+{% match v %}
+    {% when A %}
+        <b>a</b>
+    {% else %}
+        <b>other</b>
+{% endmatch %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn break_and_continue_do_not_indent() {
+    let src = "{% for i in v %}{% if i.skip %}{% continue %}{% endif %}{% if i.stop %}{% break %}{% endif %}<li>{{ i }}</li>{% endfor %}";
+    let expected = "\
+{% for i in v %}
+    {% if i.skip %}
+        {% continue %}
+    {% endif %}
+    {% if i.stop %}
+        {% break %}
+    {% endif %}
+    <li>{{ i }}</li>
+{% endfor %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn declare_and_mut_statements() {
+    let src = "<div>\n{% declare total %}\n{% decl mut n %}\n{% let mut i = 0 %}\n{% mut i += 1 %}\n</div>";
+    let expected = "\
+<div>
+    {% declare total %}
+    {% decl mut n %}
+    {% let mut i = 0 %}
+    {% mut i += 1 %}
+</div>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+// ── macro type hints ─────────────────────────────────────────────────────────
+
+/// Generic type hints contain `<`/`>` that must never be read as HTML tags —
+/// `Vec<Item>` used to come back out as `Vec<item>`.
+#[test]
+fn macro_type_hints_preserved() {
+    let src = "{% macro m(a: u32, b: Vec<Item>, c: HashMap<String, Vec<Tr>>) %}<div>{{ a }}</div>{% endmacro %}";
+    let expected = "\
+{% macro m(a: u32, b: Vec<Item>, c: HashMap<String, Vec<Tr>>) %}
+    <div>{{ a }}</div>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// Type names that collide with HTML tag names are the sharp edge here.
+#[test]
+fn macro_type_hints_colliding_with_html_tag_names() {
+    let src = "{% macro row(cell: Td, body: Option<Body>, opts: Vec<Option<Select>>) %}<tr>{{ cell }}</tr>{% endmacro %}";
+    let expected = "\
+{% macro row(cell: Td, body: Option<Body>, opts: Vec<Option<Select>>) %}
+    <tr>{{ cell }}</tr>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn macro_type_hints_with_defaults_and_refs() {
+    let src = "{% macro card(title: &str, n: u32 = 3, tags: &[&str] = empty) %}<p>{{ title }}</p>{% endmacro %}";
+    let expected = "\
+{% macro card(title: &str, n: u32 = 3, tags: &[&str] = empty) %}
+    <p>{{ title }}</p>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// A macro signature broken over several lines keeps its shape: arguments one
+/// level in, the closing `) %}` back at the tag's own level.
+#[test]
+fn macro_multiline_signature() {
+    let src = "\
+{% macro card(
+title: &str,
+items: Vec<Item>,
+) %}
+<div>{{ title }}</div>
+{% endmacro %}";
+    let expected = "\
+{% macro card(
+    title: &str,
+    items: Vec<Item>,
+) %}
+    <div>{{ title }}</div>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+// ── nested complex macros ────────────────────────────────────────────────────
+
+/// A macro whose body nests a loop, a `{% call %}` block, a match with typed
+/// arms, and an if/elif/else chain — every construct askama 0.16 added or
+/// changed, stacked.
+#[test]
+fn nested_macro_with_call_match_and_branches() {
+    let src = "\
+{% macro table(rows: Vec<Row>, caption: &str = \"\") %}
+<table class=\"data\">
+{% for row in rows %}
+{% call ui::row(row.cells) %}
+{% match row.kind %}
+{% when RowKind::Header %}
+<th scope=\"col\">{{ row.label }}</th>
+{% endwhen %}
+{% when RowKind::Data with (weight) %}
+{% if weight > 10 %}
+<td class=\"heavy\">{{ row.label }}</td>
+{% elif weight > 0 %}
+<td>{{ row.label }}</td>
+{% else %}
+<td class=\"empty\"></td>
+{% endif %}
+{% when _ %}
+<td></td>
+{% endmatch %}
+{% endcall %}
+{% endfor %}
+</table>
+{% endmacro %}";
+    let expected = "\
+{% macro table(rows: Vec<Row>, caption: &str = \"\") %}
+    <table class=\"data\">
+        {% for row in rows %}
+            {% call ui::row(row.cells) %}
+                {% match row.kind %}
+                    {% when RowKind::Header %}
+                        <th scope=\"col\">{{ row.label }}</th>
+                    {% endwhen %}
+                    {% when RowKind::Data with (weight) %}
+                        {% if weight > 10 %}
+                            <td class=\"heavy\">{{ row.label }}</td>
+                        {% elif weight > 0 %}
+                            <td>{{ row.label }}</td>
+                        {% else %}
+                            <td class=\"empty\"></td>
+                        {% endif %}
+                    {% when _ %}
+                        <td></td>
+                {% endmatch %}
+            {% endcall %}
+        {% endfor %}
+    </table>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// Macro containing a block-form `{% let %}` that itself wraps a match.
+#[test]
+fn nested_macro_with_block_let_around_match() {
+    let src = "\
+{% macro badge(kind: Option<Kind>, labels: HashMap<String, Vec<Label>>) %}
+{% let text %}
+{% match kind %}
+{% when Some(k) %}{{ k }}
+{% when None %}unknown
+{% endmatch %}
+{% endlet %}
+<span class=\"badge\">{{ text }}</span>
+{% endmacro %}";
+    let expected = "\
+{% macro badge(kind: Option<Kind>, labels: HashMap<String, Vec<Label>>) %}
+    {% let text %}
+        {% match kind %}
+            {% when Some(k) %}
+                {{ k }}
+            {% when None %}
+                unknown
+        {% endmatch %}
+    {% endlet %}
+    <span class=\"badge\">{{ text }}</span>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// Macros defined inside blocks, calling each other, with a caller-args
+/// `{% call(item) … %}` block in the middle.
+#[test]
+fn nested_macros_calling_each_other() {
+    let src = "\
+{% macro list(items: Vec<Item>) %}
+<ul>
+{% call(item) ui::each(items) %}
+{% macro cell(v: Td) %}
+<li class=\"cell\">{{ v }}</li>
+{% endmacro %}
+{% call cell(item) %}
+<span>{{ item.label }}</span>
+{% endcall %}
+{% endcall %}
+</ul>
+{% endmacro %}";
+    let expected = "\
+{% macro list(items: Vec<Item>) %}
+    <ul>
+        {% call(item) ui::each(items) %}
+            {% macro cell(v: Td) %}
+                <li class=\"cell\">{{ v }}</li>
+            {% endmacro %}
+            {% call cell(item) %}<span>{{ item.label }}</span>{% endcall %}
+        {% endcall %}
+    </ul>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// Deep nesting must be stable: formatting twice changes nothing.
+#[test]
+fn nested_macro_is_idempotent() {
+    let src = "\
+{% macro deep(rows: Vec<Row>) %}
+{% for r in rows %}
+{% match r %}
+{% when Row::A(x) %}
+{% call cell(x) %}
+<td class=\"a\">{{ x }}</td>
+{% endcall %}
+{% when Row::B %}
+{% filter upper %}
+<td>b</td>
+{% endfilter %}
+{% when _ %}
+{% endmatch %}
+{% endfor %}
+{% endmacro %}";
+    let once = format(src, &opts());
+    let twice = format(&once, &opts());
+    assert_eq!(once, twice);
+}
+
+// ── constructs taken from real-world templates ───────────────────────────────
+//
+// Every case below is a shape observed in a production Askama codebase that
+// the suite did not previously exercise.
+
+/// Whitespace-control marks on block tags — by far the most common shape in
+/// real templates, and the indenter must ignore the `-` when classifying.
+#[test]
+fn whitespace_control_on_block_tags() {
+    let src = "{%- if show -%}<div class=\"x\">{%- for i in items -%}<span>{{- i -}}</span>{%- endfor -%}</div>{%- endif -%}";
+    let expected = "\
+{%- if show -%}
+    <div class=\"x\">
+        {%- for i in items -%}<span>{{- i -}}</span>{%- endfor -%}
+    </div>
+{%- endif -%}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn whitespace_control_on_else_if_chain() {
+    let src = "{%- if a -%}<p>a</p>{%- else if b -%}<p>b</p>{%- else -%}<p>c</p>{%- endif -%}";
+    let expected = "\
+{%- if a -%}
+    <p>a</p>
+{%- else if b -%}
+    <p>b</p>
+{%- else -%}
+    <p>c</p>
+{%- endif -%}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn whitespace_control_on_match_arms() {
+    let src = "{% match role %}{%- when Role::Admin -%}<p>admin</p>{%- when _ -%}{%- endmatch -%}";
+    let expected = "\
+{% match role %}
+    {%- when Role::Admin -%}
+        <p>admin</p>
+    {%- when _ -%}
+{%- endmatch -%}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn for_tuple_destructuring() {
+    let src = "{%- for (key, value) in pairs -%}<li>{{- key -}}={{- value -}}</li>{%- endfor -%}";
+    let expected =
+        "{%- for (key, value) in pairs -%}<li>{{- key -}}={{- value -}}</li>{%- endfor -%}\n";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn when_nested_tuple_pattern() {
+    let src =
+        "{% match v %}{% when Some with ((a, b, c)) %}<p>{{ a }}</p>{% when None %}{% endmatch %}";
+    let expected = "\
+{% match v %}
+    {% when Some with ((a, b, c)) %}
+        <p>{{ a }}</p>
+    {% when None %}
+{% endmatch %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn expression_filters_untouched() {
+    let src = "<div>{{ body|safe }}{{ \"check\"|lucide }}{{ x|round(2) }}</div>";
+    let expected = "<div>{{ body|safe }}{{ \"check\"|lucide }}{{ x|round(2) }}</div>\n";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// Empty `{% call %}{% endcall %}` pairs are the dominant icon idiom; they must
+/// rejoin onto one line rather than sitting split across two.
+#[test]
+fn empty_call_pair_rejoins() {
+    let src = "<a href=\"#\">{% call icons::add() %}{% endcall %}<span>Add</span></a>";
+    let expected = "\
+<a href=\"#\">
+    {% call icons::add() %}{% endcall %}
+    <span>Add</span>
+</a>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn empty_call_pairs_in_if_branches() {
+    let src = "{%- if unread -%}{% call icons::bell() %}{% endcall %}{%- else -%}{% call icons::quiet() %}{% endcall %}{%- endif -%}";
+    let expected = "\
+{%- if unread -%}
+    {% call icons::bell() %}{% endcall %}
+{%- else -%}
+    {% call icons::quiet() %}{% endcall %}
+{%- endif -%}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn import_as_then_call() {
+    let src = "{%- import \"icons.askama.html\" as icons -%}<nav>{% call icons::menu() %}{% endcall %}</nav>";
+    let expected = "\
+{%- import \"icons.askama.html\" as icons -%}
+<nav>
+    {% call icons::menu() %}{% endcall %}
+</nav>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn include_statement() {
+    let src = "<div>{% include \"partials/header.html\" %}<p>body</p></div>";
+    let expected = "\
+<div>
+    {% include \"partials/header.html\" %}
+    <p>body</p>
+</div>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn macro_args_with_string_defaults() {
+    let src = "{% macro field(label: str, icon: str = \"\", value: str = \"\") %}<td>{{ label }}</td>{% endmacro %}";
+    let expected = "\
+{% macro field(label: str, icon: str = \"\", value: str = \"\") %}
+    <td>{{ label }}</td>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// A path type (`br_types::CsrfToken`) in an argument list — the `::` must not
+/// be mistaken for anything, and the signature stays byte-identical.
+#[test]
+fn macro_args_with_path_type() {
+    let src = "{% macro video(id: str, tok: br_types::CsrfToken, secs: i32) %}<div>{{ id }}</div>{% endmacro %}";
+    let expected = "\
+{% macro video(id: str, tok: br_types::CsrfToken, secs: i32) %}
+    <div>{{ id }}</div>
+{% endmacro %}
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// `<svg>` and its children are treated as inline — the graphic stays on one
+/// line instead of being exploded element by element.
+#[test]
+fn inline_svg_stays_on_one_line() {
+    let src = "<button><svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M4 4h16\" stroke=\"currentColor\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg><span>Go</span></button>";
+    let expected = "\
+<button>
+    <svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M4 4h16\" stroke=\"currentColor\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>
+    <span>Go</span>
+</button>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+/// The shape real templates use: a template tag inside a textarea. The body is
+/// raw content, so it is emitted exactly as written rather than indented.
+#[test]
+fn textarea_with_whitespace_control() {
+    let src = "<textarea name=\"{{- name -}}\">{%- if let Some(s) = form.summary -%}{{- s -}}{%- endif -%}</textarea>";
+    let expected = "\
+<textarea name=\"{{- name -}}\">
+{%- if let Some(s) = form.summary -%}{{- s -}}{%- endif -%}</textarea>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+// ── raw-content elements ─────────────────────────────────────────────────────
+//
+// `<pre>` and `<textarea>` bodies are whitespace-significant, and
+// `<script>` / `<style>` hold code. None of them may be re-indented.
+// HTML drops a single newline directly after a `<pre>` / `<textarea>` start
+// tag, so gaining one there does not change what the page renders.
+
+#[test]
+fn textarea_literal_content_is_verbatim() {
+    let src = "<form><textarea name=\"notes\" rows=\"4\">Line one\nLine two\n  indented line</textarea></form>";
+    let expected = "\
+<form>
+    <textarea name=\"notes\" rows=\"4\">
+Line one
+Line two
+  indented line</textarea>
+</form>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn textarea_closing_tag_is_not_indented() {
+    // Indenting `</textarea>` would push whitespace into the field's value.
+    let src = "<form>\n<textarea name=\"n\">Line one\n  indented\n</textarea>\n</form>";
+    let expected = "\
+<form>
+    <textarea name=\"n\">
+Line one
+  indented
+</textarea>
+</form>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn pre_keeps_its_indentation() {
+    let src = "<div>\n<pre>\n  two\n    four\nflush\n</pre>\n</div>";
+    let expected = "\
+<div>
+    <pre>
+  two
+    four
+flush
+</pre>
+</div>
+";
+    assert_eq!(format(src, &opts()), expected);
+}
+
+#[test]
+fn script_keeps_its_own_indentation() {
+    let src = "<head>\n<script>\nfunction f() {\n    return 1;\n}\n</script>\n</head>";
+    let out = format(src, &opts());
+    assert!(
+        out.contains("function f() {\n    return 1;\n}"),
+        "script body was re-indented:\n{}",
+        out
+    );
+}
+
+#[test]
+fn raw_content_elements_are_idempotent() {
+    let src = "\
+<div>
+    <pre>
+  two
+    four
+</pre>
+    <textarea name=\"n\">a
+  b</textarea>
+    <style>.a {
+    color: red;
+}</style>
+</div>
+";
+    let once = format(src, &opts());
+    assert_eq!(once, format(&once, &opts()));
 }

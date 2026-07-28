@@ -9,12 +9,18 @@ A formatter for [Askama](https://github.com/askama-rs/askama) HTML templates.
 Formats `.askama.html` template files using the same compress → expand → indent → condense pipeline
 as [djLint](https://djlint.com), with first-class support for Askama's Rust-specific template syntax:
 
-- `{% match %}`
-- `{% when %}`
-- `{% call macro() %}`
-- `{% if let %}`
-- `{% let %}`
-- `else if` chains
+- `{% match %}` / `{% when %}` / `{% endwhen %}`
+- `{% call macro() %}` … `{% endcall %}`, including the caller-args form `{% call(item) each(items) %}`
+- `{% macro card(title: &str, items: Vec<Item>, n: u32 = 3) %}` — typed arguments with defaults
+- `{% if let %}`, `{% else if %}` / `{% elif %}` chains
+- `{% let %}` / `{% set %}`, both the value form and the block form closed by `{% endlet %}` / `{% endset %}`
+- `{% declare %}`, `{% mut %}`, `{% break %}`, `{% continue %}`
+
+Askama **0.16** syntax is supported, and templates written for askama 0.14/0.15 still format
+correctly — a bare `{% call foo() %}` with no `{% endcall %}` is left as the statement it was.
+
+`<pre>`, `<textarea>`, `<script>` and `<style>` bodies are left byte-for-byte alone: their
+contents are either whitespace-significant or code, so they are never re-indented.
 
 ## Install
 
@@ -62,7 +68,7 @@ max_line_length = 120
 sort_attributes = false
 ```
 
-All Askama template syntax is handled automatically — no extra configuration needed. `{% match %}`/`{% when %}`, `{% call %}`, `{% if let %}`, `{% let %}`, and `else if` chains just work.
+All Askama template syntax is handled automatically — no extra configuration needed. `{% match %}`/`{% when %}`, `{% call %}`, `{% if let %}`, `{% let %}`, `{% elif %}` and `else if` chains just work.
 
 ```html
 {% match user.role %}

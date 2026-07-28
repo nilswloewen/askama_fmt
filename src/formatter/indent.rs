@@ -1,6 +1,7 @@
 /// Line-by-line indentation state machine.
 use crate::config::FormatOptions;
-use crate::formatter::expand::BLOCK_HTML_TAGS;
+use crate::formatter::expand::{BLOCK_HTML_TAGS, RAW_CONTENT_TAGS};
+use crate::formatter::BlockPairs;
 
 const VOID_HTML_TAGS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
@@ -33,6 +34,10 @@ struct IndentState<'a> {
     /// Tuple: (tag_name, is_block_level).  Block-level tags increment `level`
     /// when the closing `>` is found; inline/void tags do not.
     multi_line_tag: Option<(String, bool)>,
+    /// Non-None when we're inside an Askama tag whose `%}` has not appeared yet
+    /// (e.g. a macro definition with one typed argument per line).
+    /// Tuple: (effect, is_match, level the opening line was printed at).
+    multi_line_template: Option<(Effect, bool, usize)>,
     /// Stack of base indent levels for open `custom_blocks` tags.
     /// Used by `custom_blocks_branch` keywords to reset each branch to the
     /// same indentation level inside the enclosing block.
@@ -47,7 +52,68 @@ impl<'a> IndentState<'a> {
             in_raw: false,
             raw_depth: 0,
             multi_line_tag: None,
+            multi_line_template: None,
             block_base_levels: Vec::new(),
+        }
+    }
+
+    /// Level adjustments that happen *before* a template tag is printed.
+    /// Returns the level the tag itself should be printed at.
+    fn open_effect(&mut self, effect: Effect) -> usize {
+        match effect {
+            Effect::Indent | Effect::NoChange => self.level,
+            Effect::Unindent => {
+                self.level = self.level.saturating_sub(1);
+                self.level
+            }
+            // The body stays where it is; only this one line moves out.
+            Effect::UnindentLine => self.level.saturating_sub(1),
+            Effect::Branch => match self.block_base_levels.last() {
+                Some(&base) => {
+                    self.level = base + 1;
+                    self.level
+                }
+                // No enclosing `{% match %}` — leave the level alone.
+                None => self.level,
+            },
+            Effect::BranchInnerEnd => match self.block_base_levels.last() {
+                Some(&base) => {
+                    self.level = base + 1;
+                    self.level
+                }
+                None => {
+                    self.level = self.level.saturating_sub(1);
+                    self.level
+                }
+            },
+            Effect::BranchEnd => {
+                let base = self
+                    .block_base_levels
+                    .pop()
+                    .unwrap_or_else(|| self.level.saturating_sub(1));
+                self.level = base;
+                self.level
+            }
+        }
+    }
+
+    /// Level adjustments that happen *after* a template tag is printed.
+    fn close_effect(&mut self, effect: Effect, is_match: bool) {
+        match effect {
+            Effect::Indent => {
+                // Record where the `{% match %}` sits so its `{% when %}` arms
+                // and `{% endmatch %}` can snap back to it.
+                if is_match {
+                    self.block_base_levels.push(self.level);
+                }
+                self.level += 1;
+            }
+            // Without an enclosing `{% match %}` the arm was printed in place,
+            // so there is nothing to indent into.
+            Effect::Branch if !self.block_base_levels.is_empty() => {
+                self.level += 1;
+            }
+            _ => {}
         }
     }
 
@@ -69,6 +135,7 @@ impl<'a> IndentState<'a> {
 
 pub fn indent(html: &str, opts: &FormatOptions) -> String {
     let mut state = IndentState::new(opts);
+    let mut pairs = BlockPairs::scan(html);
     let mut out = String::with_capacity(html.len());
 
     for line in html.lines() {
@@ -103,32 +170,59 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
             continue;
         }
 
-        // Inside a raw/verbatim block: emit as-is
+        // --- Multi-line Askama tag continuation ---
+        // A tag such as `{% macro card(` spreads its arguments over several
+        // lines; they are indented one level in, and the line carrying `%}`
+        // returns to the level the tag opened at.
+        if let Some((effect, is_match, open_level)) = state.multi_line_template {
+            if trimmed.contains("%}") {
+                state.multi_line_template = None;
+                state.write_indent_at(&mut out, open_level);
+                out.push_str(trimmed);
+                out.push('\n');
+                state.close_effect(effect, is_match);
+            } else {
+                state.write_indent_at(&mut out, open_level + 1);
+                out.push_str(trimmed);
+                out.push('\n');
+            }
+            continue;
+        }
+
+        // Inside a raw/verbatim block: emit the line exactly as written.
+        // The body of `<pre>` / `<textarea>` is whitespace-significant, and
+        // `<script>` / `<style>` hold code whose own indentation is not ours
+        // to rewrite — so no leading whitespace is added or removed.
         if state.in_raw {
             if is_raw_block_close(trimmed) {
                 state.raw_depth = state.raw_depth.saturating_sub(1);
                 if state.raw_depth == 0 {
                     state.in_raw = false;
-                    // Emit the closing line.  If the closing tag is the entire
-                    // trimmed line (e.g. `</style>`) give it current-level
-                    // indentation.  When it's embedded at the end of content
-                    // (e.g. `}</style>`) keep it as-is so that the output is
-                    // stable across multiple formatter passes.
-                    let starts_with_close = trimmed.starts_with("</style>")
-                        || trimmed.starts_with("</script>")
-                        || trimmed.starts_with("</pre>")
+                    // Emit the closing line.  When the closing tag is the whole
+                    // line (e.g. `</style>`) give it current-level indentation —
+                    // it is markup, not content.  When it is embedded at the end
+                    // of content (e.g. `}</style>`) the line stays verbatim, so
+                    // that the last content line keeps its own whitespace.
+                    //
+                    // `</pre>` and `</textarea>` are never re-indented: the
+                    // whitespace in front of them is *inside* the element and
+                    // renders, so moving the tag would change the page.
+                    let close_on_own_line = (is_raw_close_tag(trimmed)
+                        && !is_ws_significant_close_tag(trimmed))
                         || trimmed.starts_with("{%");
-                    if starts_with_close {
+                    if close_on_own_line {
                         state.write_indent(&mut out);
+                        out.push_str(trimmed);
+                    } else {
+                        out.push_str(line);
                     }
-                    out.push_str(trimmed);
                     out.push('\n');
                 } else {
-                    out.push_str(trimmed);
+                    out.push_str(line);
                     out.push('\n');
                 }
             } else {
-                out.push_str(trimmed);
+                out.push_str(line);
                 out.push('\n');
             }
             continue;
@@ -159,75 +253,21 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
         }
 
         // 2. Template tag classification
-        if let Some(kw) = parse_template_keyword(trimmed) {
-            // 2a. Branch keyword ("when"): resets to the enclosing match's base
-            // level + 1, then pushes for content.
-            if BRANCH_KEYWORDS.contains(&kw) {
-                if let Some(&base) = state.block_base_levels.last() {
-                    state.level = base + 1;
-                    state.write_indent(&mut out);
-                    out.push_str(trimmed);
-                    out.push('\n');
-                    state.level = base + 2;
+        if let Some((kw, inner)) = parse_template_tag(trimmed) {
+            if let Some(effect) = classify(kw, inner, &mut pairs) {
+                let is_match = kw == "match";
+                let open_level = state.open_effect(effect);
+                state.write_indent_at(&mut out, open_level);
+                out.push_str(trimmed);
+                out.push('\n');
+
+                // The tag's `%}` is on a later line — hold the effect until the
+                // continuation lines have been emitted.
+                if !trimmed.contains("%}") {
+                    state.multi_line_template = Some((effect, is_match, open_level));
                 } else {
-                    // No enclosing custom block — no-change fallback
-                    state.write_indent(&mut out);
-                    out.push_str(trimmed);
-                    out.push('\n');
+                    state.close_effect(effect, is_match);
                 }
-                continue;
-            }
-
-            // 2b. Branch-aware end keyword ("endmatch"):
-            // pops back to the base level recorded when the block was opened.
-            if BRANCH_END_KEYWORDS.contains(&kw) {
-                let base = state
-                    .block_base_levels
-                    .pop()
-                    .unwrap_or_else(|| state.level.saturating_sub(1));
-                state.level = base;
-                state.write_indent(&mut out);
-                out.push_str(trimmed);
-                out.push('\n');
-                continue;
-            }
-
-            // 2c. Built-in closing tag (`{% endif %}`, `{% endfor %}`, …)
-            if UNINDENT_KEYWORDS.contains(&kw) {
-                state.level = state.level.saturating_sub(1);
-                state.write_indent(&mut out);
-                out.push_str(trimmed);
-                out.push('\n');
-                continue;
-            }
-
-            // 3. Unindent-line tags (else, else if) → print at level-1
-            if UNINDENT_LINE_KEYWORDS.contains(&kw) {
-                let effective = state.level.saturating_sub(1);
-                state.write_indent_at(&mut out, effective);
-                out.push_str(trimmed);
-                out.push('\n');
-                continue;
-            }
-
-            // 4. Tags with no indent change (let, call, import, include, extends, …)
-            if NO_CHANGE_KEYWORDS.contains(&kw) {
-                state.write_indent(&mut out);
-                out.push_str(trimmed);
-                out.push('\n');
-                continue;
-            }
-
-            // 5. Indent-opening template tag
-            if INDENT_KEYWORDS.contains(&kw) {
-                // Track base level for match so the "when" branch keyword can reset correctly
-                if kw == "match" {
-                    state.block_base_levels.push(state.level);
-                }
-                state.write_indent(&mut out);
-                out.push_str(trimmed);
-                out.push('\n');
-                state.level += 1;
                 continue;
             }
         }
@@ -281,6 +321,25 @@ pub fn indent(html: &str, opts: &FormatOptions) -> String {
 
 // ── Keyword classification ──────────────────────────────────────────────────
 
+/// What an Askama tag does to the indent level.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Effect {
+    /// `{% if %}`, `{% for %}`, `{% macro %}`, … — print here, indent the body.
+    Indent,
+    /// `{% endif %}`, `{% endfor %}`, … — unindent, then print.
+    Unindent,
+    /// `{% else %}`, `{% elif %}` — print one level out, body stays indented.
+    UnindentLine,
+    /// `{% when %}` — reset to the enclosing `{% match %}` + 1, indent the arm.
+    Branch,
+    /// `{% endwhen %}` — close one match arm, back to the `{% when %}` level.
+    BranchInnerEnd,
+    /// `{% endmatch %}` — back to the level the `{% match %}` was printed at.
+    BranchEnd,
+    /// `{% include %}`, `{% break %}`, `{% let x = 1 %}`, … — print here.
+    NoChange,
+}
+
 const INDENT_KEYWORDS: &[&str] = &[
     "if", "for", "macro", "block", "filter", "with", "raw", "match",
 ];
@@ -293,15 +352,62 @@ const UNINDENT_KEYWORDS: &[&str] = &[
     "endfilter",
     "endwith",
     "endraw",
+    "endcall",
+    "endlet",
+    "endset",
 ];
 
-const UNINDENT_LINE_KEYWORDS: &[&str] = &["else", "else if"];
+const UNINDENT_LINE_KEYWORDS: &[&str] = &["else", "else if", "elif"];
 
 const BRANCH_KEYWORDS: &[&str] = &["when"];
 
 const BRANCH_END_KEYWORDS: &[&str] = &["endmatch"];
 
-const NO_CHANGE_KEYWORDS: &[&str] = &["let", "call", "import", "include", "extends"];
+const NO_CHANGE_KEYWORDS: &[&str] = &[
+    "import", "include", "extends", "break", "continue", "mut", "decl", "declare",
+];
+
+/// Classify a template tag line.  `inner` is the tag text without delimiters,
+/// needed to tell `{% let x = 1 %}` (a statement) from `{% let x %}` (a block).
+fn classify(kw: &str, inner: &str, pairs: &mut BlockPairs) -> Option<Effect> {
+    if BRANCH_KEYWORDS.contains(&kw) {
+        return Some(Effect::Branch);
+    }
+    if kw == "endwhen" {
+        return Some(Effect::BranchInnerEnd);
+    }
+    if BRANCH_END_KEYWORDS.contains(&kw) {
+        return Some(Effect::BranchEnd);
+    }
+    if UNINDENT_KEYWORDS.contains(&kw) {
+        return Some(Effect::Unindent);
+    }
+    if UNINDENT_LINE_KEYWORDS.contains(&kw) {
+        return Some(Effect::UnindentLine);
+    }
+    if matches!(kw, "let" | "set") {
+        let opens = crate::formatter::let_opens_block(inner) && pairs.claim(kw);
+        return Some(if opens {
+            Effect::Indent
+        } else {
+            Effect::NoChange
+        });
+    }
+    if kw == "call" {
+        return Some(if pairs.claim(kw) {
+            Effect::Indent
+        } else {
+            Effect::NoChange
+        });
+    }
+    if NO_CHANGE_KEYWORDS.contains(&kw) {
+        return Some(Effect::NoChange);
+    }
+    if INDENT_KEYWORDS.contains(&kw) {
+        return Some(Effect::Indent);
+    }
+    None
+}
 
 // ── Tag parsers ─────────────────────────────────────────────────────────────
 
@@ -321,27 +427,29 @@ fn parse_html_close_tag(line: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
-/// Extract the keyword from a template tag line, e.g. `{% when Some with (x) %}` → `"when"`.
+/// Split a template tag line into `(keyword, inner)`, e.g.
+/// `{% when Some with (x) %}` → `("when", "when Some with (x)")`.
 /// Also handles `{%- when -%}` whitespace-stripped variants.
-fn parse_template_keyword(line: &str) -> Option<&str> {
+///
+/// `inner` keeps the whole tag body (delimiters and whitespace-control markers
+/// removed) because some keywords need it — `{% let x = 1 %}` and
+/// `{% let x %}` differ only in what follows the keyword.
+fn parse_template_tag(line: &str) -> Option<(&str, &str)> {
     let s = line.trim();
     if !s.starts_with("{%") {
         return None;
     }
     let inner = s[2..].trim_start_matches(['-', '+', '~', ' ', '\t']);
-    // "else if" is a two-word keyword
-    if inner.starts_with("else if") {
-        return Some("else if");
-    }
-    let kw = inner
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(['-', '+', '~']);
+    // Trim the tail only when the tag actually closes on this line.
+    let inner = match inner.find("%}") {
+        Some(end) => inner[..end].trim_end_matches(['-', '+', '~', ' ', '\t']),
+        None => inner,
+    };
+    let kw = crate::formatter::leading_keyword(inner);
     if kw.is_empty() {
         None
     } else {
-        Some(kw)
+        Some((kw, inner))
     }
 }
 
@@ -391,19 +499,32 @@ fn parse_html_open_tag(line: &str) -> Option<(&str, bool, bool)> {
 fn is_raw_block_open(line: &str) -> bool {
     let s = line.trim();
     // Only open a raw block if the closing tag is NOT also on this line.
-    for (open, close) in &[
-        ("<pre", "</pre>"),
-        ("<script", "</script>"),
-        ("<style", "</style>"),
-    ] {
-        if s.starts_with(open) && !s.contains(close) {
+    for tag in RAW_CONTENT_TAGS {
+        if s.starts_with(&format!("<{}", tag)) && !s.contains(&format!("</{}>", tag)) {
             return true;
         }
     }
-    if let Some(kw) = parse_template_keyword(s) {
+    if let Some((kw, _)) = parse_template_tag(s) {
         return kw == "raw";
     }
     false
+}
+
+/// Does the line start with the closing tag of a raw-content element?
+fn is_raw_close_tag(line: &str) -> bool {
+    RAW_CONTENT_TAGS
+        .iter()
+        .any(|tag| line.starts_with(&format!("</{}>", tag)))
+}
+
+/// Raw-content elements whose body is whitespace-significant.  Anything before
+/// their closing tag is rendered text, so that tag must not be moved.
+const WS_SIGNIFICANT_TAGS: &[&str] = &["pre", "textarea"];
+
+fn is_ws_significant_close_tag(line: &str) -> bool {
+    WS_SIGNIFICANT_TAGS
+        .iter()
+        .any(|tag| line.starts_with(&format!("</{}>", tag)))
 }
 
 /// If the line opens an HTML tag whose `>` is NOT on this line, returns
@@ -440,10 +561,13 @@ fn html_open_tag_closes_here(line: &str) -> bool {
 fn is_raw_block_close(line: &str) -> bool {
     let s = line.trim();
     // The closing tag can appear anywhere on the line (e.g. `}</style>`).
-    if s.contains("</pre>") || s.contains("</script>") || s.contains("</style>") {
+    if RAW_CONTENT_TAGS
+        .iter()
+        .any(|tag| s.contains(&format!("</{}>", tag)))
+    {
         return true;
     }
-    if let Some(kw) = parse_template_keyword(s) {
+    if let Some((kw, _)) = parse_template_tag(s) {
         return kw == "endraw";
     }
     false

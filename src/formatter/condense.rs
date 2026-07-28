@@ -15,7 +15,9 @@ const COLLAPSIBLE_HTML_TAGS: &str =
 
 /// Template tags that can be collapsed to one line.
 /// Mirrors djLint's optional_single_line_template_tags — excludes macro, filter, match.
-const COLLAPSIBLE_TEMPLATE_TAGS: &str = "if|for|block|with";
+/// `call`, `let` and `set` are Askama 0.16 block forms
+/// (`{% call btn() %}…{% endcall %}`, `{% let x %}…{% endlet %}`).
+const COLLAPSIBLE_TEMPLATE_TAGS: &str = "if|for|block|with|call|let|set";
 
 static HTML_CONDENSE_RE: OnceLock<Regex> = OnceLock::new();
 static TMPL_CONDENSE_RE: OnceLock<Regex> = OnceLock::new();
@@ -35,18 +37,37 @@ fn html_condense_re() -> &'static Regex {
 
 fn tmpl_condense_re() -> &'static Regex {
     TMPL_CONDENSE_RE.get_or_init(|| {
-        // ({%[-+~]? tag [^%\n]* %})  \s*  ([^%\n]*)  \s*  ({%[-+~]? endtag ... %})
+        // ({%[-+~]? tag [^%\n]* %})  \n  ([^%\n]*)?  \n  ({%[-+~]? endtag ... %})
         // [^%\n]* — tag body and content must each be single-line.
+        // The content line is optional so that an empty pair
+        // (`{% call icon() %}` / `{% endcall %}`) rejoins too.
         // Using standard regex crate (no lookahead needed here).
         let pat = format!(
-            "(?im)(\\{{%-?[ ]*(?:{t})\\b[^%\\n]*%\\}})[ \\t]*\\n[ \\t]*([^%\\n]*)[ \\t]*\\n[ \\t]*(\\{{%-?[ ]*end(?:{t})\\b[^%\\n]*%\\}})",
+            "(?im)(\\{{%-?[ ]*(?:{t})\\b[^%\\n]*%\\}})[ \\t]*\\n[ \\t]*(?:([^%\\n]*?)[ \\t]*\\n[ \\t]*)?(\\{{%-?[ ]*end(?:{t})\\b[^%\\n]*%\\}})",
             t = COLLAPSIBLE_TEMPLATE_TAGS
         );
         Regex::new(&pat).unwrap()
     })
 }
 
+/// Collapse short pairs onto one line.
+///
+/// The two passes feed each other — collapsing `{% call x() %}{% endcall %}`
+/// can bring a wrapping `<span>…</span>` within reach — so they run to a fixed
+/// point rather than once each.
 pub fn condense(html: &str, opts: &FormatOptions) -> String {
+    let mut out = condense_once(html, opts);
+    for _ in 0..2 {
+        let next = condense_once(&out, opts);
+        if next == out {
+            break;
+        }
+        out = next;
+    }
+    out
+}
+
+fn condense_once(html: &str, opts: &FormatOptions) -> String {
     // First pass: collapse HTML tag pairs
     let html = html_condense_re()
         .replace_all(html, |caps: &regex::Captures<'_>| {
@@ -57,6 +78,15 @@ pub fn condense(html: &str, opts: &FormatOptions) -> String {
             let open = caps.get(1).unwrap().as_str().trim();
             let content = caps.get(2).unwrap().as_str().trim();
             let close = caps.get(3).unwrap().as_str().trim();
+            // Collapsing means producing *one* line.  A body that is itself
+            // several lines (successive template statements, say) would keep
+            // its inner newlines and come out half-glued, so leave it alone.
+            // Raw blocks are the exception: their content is verbatim, and
+            // pulling the first line back up is what restores
+            // `<style …>first line` as the author wrote it.
+            if content.contains('\n') && !is_raw_content_tag(open) {
+                return full_match.to_string();
+            }
             let indent_len = leading_indent_of(html, caps.get(1).unwrap().start()).len();
             let combined = format!("{}{}{}", open, content, close);
             if combined.len() + indent_len <= opts.max_line_length {
@@ -85,7 +115,8 @@ pub fn condense(html: &str, opts: &FormatOptions) -> String {
                 return full_match.to_string();
             }
             let open = caps.get(1).unwrap().as_str().trim();
-            let content = caps.get(2).unwrap().as_str().trim();
+            // Group 2 is absent for an empty pair.
+            let content = caps.get(2).map_or("", |m| m.as_str().trim());
             let close = caps.get(3).unwrap().as_str().trim();
             let indent_len = leading_indent_of(&html, caps.get(1).unwrap().start()).len();
             let combined = format!("{}{}{}", open, content, close);
@@ -117,6 +148,14 @@ pub fn clean_whitespace(html: &str) -> String {
         }
     }
     result
+}
+
+/// Is `open_tag` (`<style type="…">`, …) a tag whose body is raw text?
+fn is_raw_content_tag(open_tag: &str) -> bool {
+    let name = open_tag.trim_start_matches('<');
+    ["script", "style", "pre"]
+        .iter()
+        .any(|t| name.len() >= t.len() && name[..t.len()].eq_ignore_ascii_case(t))
 }
 
 /// Find the leading whitespace of the line that contains byte offset `pos`.

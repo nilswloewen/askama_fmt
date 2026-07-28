@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.4.0] - 2026-07-27
+
+### Features
+
+- **Askama 0.16 support.**
+  - `{% call %}` is now a block: its body is indented and `{% endcall %}` closes it.
+    The caller-args form `{% call(item) each(items) %}` is recognised too.
+  - `{% elif %}` formats like `{% else if %}`.
+  - Block-form `{% let x %}` … `{% endlet %}` and `{% set x %}` … `{% endset %}`
+    indent their body; the value form `{% let x = 1 %}` stays a statement.
+  - `{% endwhen %}` closes a match arm and aligns with its `{% when %}`.
+  - `{% declare %}` / `{% decl %}`, `{% mut %}`, `{% break %}` and `{% continue %}`
+    are recognised as statements.
+- **Type hints in macro definitions.** `{% macro card(title: &str, items: Vec<Item>, n: u32 = 3) %}`
+  is preserved exactly. Generic parameters used to be parsed as HTML: `Vec<Item>` came back
+  out as `Vec<item>`, and a type whose name collided with a tag (`Option<Body>`, `Vec<Td>`)
+  could be split across lines. Template constructs are now opaque to every HTML pass.
+- A macro signature spread over several lines keeps its shape — arguments one level in,
+  the closing `) %}` back at the tag's own level.
+
+### Fixes
+
+- **Raw-content elements keep their contents verbatim.** `<pre>`, `<textarea>`, `<script>`
+  and `<style>` bodies were being re-indented — every line was stripped of its leading
+  whitespace and re-emitted at the block's indent level. For `<pre>` and `<textarea>`,
+  whose contents are whitespace-significant, that changed what the page rendered;
+  for `<script>` / `<style>` it reformatted code that isn't the formatter's to touch.
+  `<textarea>` is now recognised as a raw element (it previously was not at all), and
+  `</pre>` / `</textarea>` are no longer indented, since the whitespace in front of them
+  is part of the element's value. A single newline after a `<pre>` / `<textarea>` start
+  tag may still be introduced — HTML discards it, so the rendered value is unchanged.
+- Short tag pairs with an empty body (`{% call icon() %}{% endcall %}`) rejoin onto one line.
+- A multi-line body is no longer "collapsed" into a half-glued line; collapsing now only
+  happens when the result really is a single line.
+- Collapsing a template pair can bring its wrapping HTML pair within `max_line_length`,
+  so the condense passes now run to a fixed point.
+
+### Compatibility
+
+Templates written for askama 0.14 / 0.15 still format correctly: a bare `{% call foo() %}`
+or `{% let x %}` with no matching closer anywhere in the file is treated as the statement
+it was, and does not shift the indent level.
+
 ## [0.3.3] - 2026-06-03
 
 ### Features

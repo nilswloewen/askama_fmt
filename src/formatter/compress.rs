@@ -21,9 +21,18 @@ fn html_tag_re() -> &'static Regex {
 pub fn compress(html: &str) -> String {
     // Normalise line endings first
     let html = html.replace("\r\n", "\n").replace('\r', "\n");
+    let tmpl = super::template_spans(&html);
 
     html_tag_re()
         .replace_all(&html, |caps: &fancy_regex::Captures<'_>| {
+            // Never touch text inside a template tag.  Generic type hints in an
+            // Askama 0.16 macro definition (`{% macro f(v: Vec<Item>) %}`) look
+            // exactly like an HTML tag to this regex, and rewriting them would
+            // lower-case the type name.
+            if super::in_span(&tmpl, caps.get(0).unwrap().start()) {
+                return caps[0].to_string();
+            }
+
             let bracket = &caps[1];
             let tag = caps[2].to_lowercase();
             let attrs_raw = &caps[3];
@@ -41,9 +50,9 @@ pub fn compress(html: &str) -> String {
             // boundary into a raw-content block (e.g. `<style>` followed by CSS
             // on the next line).  The closing tag being inside `attrs_raw` is the
             // tell.
-            if attrs_raw.contains("</style")
-                || attrs_raw.contains("</script")
-                || attrs_raw.contains("</pre")
+            if super::expand::RAW_CONTENT_TAGS
+                .iter()
+                .any(|t| attrs_raw.contains(&format!("</{}", t)))
             {
                 return caps[0].to_string();
             }
